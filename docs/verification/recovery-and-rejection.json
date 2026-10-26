@@ -1,0 +1,42 @@
+{
+  "streaming": true,
+  "restartRecovery": true,
+  "declinedTurn": {
+    "status": "completed",
+    "methods": [
+      "thread/status/changed",
+      "turn/started",
+      "account/updated",
+      "mcpServer/startupStatus/updated",
+      "item/started",
+      "item/completed",
+      "item/agentMessage/delta",
+      "thread/tokenUsage/updated",
+      "account/rateLimits/updated",
+      "turn/completed"
+    ]
+  },
+  "commandProbe": {
+    "status": "completed",
+    "methods": [
+      "thread/status/changed",
+      "turn/started",
+      "item/started",
+      "item/completed",
+      "item/commandExecution/requestApproval",
+      "serverRequest/resolved",
+      "thread/tokenUsage/updated",
+      "account/rateLimits/updated",
+      "item/agentMessage/delta",
+      "turn/completed"
+    ],
+    "explanation": "The client declined the escalated command approval. Stopping without running anything else."
+  },
+  "approvals": [
+    {
+      "method": "item/commandExecution/requestApproval",
+      "decision": "decline"
+    }
+  ],
+  "fileAfterDecline": false
+}

@@ -1,0 +1,27 @@
+{
+  "testedAt": "2026-10-26T16:35:56.092Z",
+  "handshake": true,
+  "initializeUserAgent": "Codex Desktop/0.163.0 (Windows 10.0.19045; x86_64) dumb (rust_portable_harness_smoke; 0.1.0)",
+  "accountPresent": true,
+  "modelCount": 7,
+  "threadStarted": true,
+  "threadListed": true,
+  "threadRead": true,
+  "historyTurns": 1,
+  "notifications": [
+    "remoteControl/status/changed",
+    "account/updated",
+    "thread/started",
+    "mcpServer/startupStatus/updated",
+    "thread/status/changed",
+    "turn/started",
+    "item/started",
+    "item/completed",
+    "item/agentMessage/delta",
+    "thread/tokenUsage/updated",
+    "account/rateLimits/updated",
+    "turn/completed"
+  ],
+  "conversationVerified": true,
+  "note": "Authenticated run"
+}
