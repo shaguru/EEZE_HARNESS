@@ -57,17 +57,19 @@ function Modal({
   title,
   children,
   onClose,
+  className = "",
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     ref.current?.showModal();
   }, []);
   return (
-    <dialog ref={ref} onCancel={onClose} className="dialog">
+    <dialog ref={ref} onCancel={onClose} className={`dialog ${className}`}>
       <div className="dialog-head">
         <h2>{title}</h2>
         <button
@@ -100,6 +102,8 @@ export default function App() {
   const [diagnostics, setDiagnostics] = useState("");
   const [label, setLabel] = useState<{ id: string; text: string } | null>(null);
   const [follow, setFollow] = useState(true);
+  const [dragging, setDragging] = useState<"sidebar" | "inspector" | "composer" | null>(null);
+  const [composerWidth, setComposerWidth] = useState(340);
   const scroll = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refresh = useCallback(async () => {
@@ -141,6 +145,10 @@ export default function App() {
     }
   }
   const config = s?.config;
+  const configRef = useRef<Config | null>(null);
+  useEffect(() => {
+    configRef.current = config || null;
+  }, [config]);
   const connected =
     !!s && ["Ready", "Busy", "Waiting for Approval"].includes(s.lifecycle);
   const busy =
@@ -190,9 +198,60 @@ export default function App() {
       model: p.model,
       sandbox: p.sandbox,
       approvalPolicy: p.approvalPolicy,
+      reasoningEffort: p.reasoningEffort,
+      reasoningSummary: p.reasoningSummary,
+      serviceTier: p.serviceTier,
+      layout: p.layout,
+      sidebarWidth: p.sidebarWidth,
+      inspectorWidth: p.inspectorWidth,
       debugLog: p.debugLog,
     });
   }
+  const selectedModel =
+    s?.models.find((m: any) => m.id === config?.model || m.model === config?.model) ||
+    s?.models.find((m: any) => m.isDefault) ||
+    s?.models[0];
+  const effortOptions = (selectedModel?.supportedReasoningEfforts || []) as any[];
+  const tierOptions = (selectedModel?.serviceTiers || []) as any[];
+  const refreshAccount = () => run("auth", { action: "status" });
+  const setWidth = (kind: "sidebar" | "inspector", value: number) => {
+    if (!config) return;
+    const next = {
+      ...config,
+      sidebarWidth:
+        kind === "sidebar"
+          ? Math.max(180, Math.min(420, value))
+          : config.sidebarWidth,
+      inspectorWidth:
+        kind === "inspector"
+          ? Math.max(220, Math.min(460, value))
+          : config.inspectorWidth,
+    };
+    setS((current) => (current ? { ...current, config: next } : current));
+  };
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e: MouseEvent) => {
+      if (dragging === "sidebar") setWidth("sidebar", e.clientX);
+      else if (dragging === "inspector") setWidth("inspector", window.innerWidth - e.clientX);
+      else {
+        const width = config?.layout === "left"
+          ? e.clientX - (config.sidebarWidth || 235)
+          : window.innerWidth - e.clientX;
+        setComposerWidth(Math.max(260, Math.min(560, width)));
+      }
+    };
+    const up = () => {
+      if (configRef.current) savePrefs(configRef.current).catch(() => {});
+      setDragging(null);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up, { once: true });
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [dragging]);
   async function send() {
     if (!text.trim() || pending || busy) return;
     const sent = text;
@@ -260,9 +319,9 @@ export default function App() {
           <button
             className="ghost"
             disabled={pending || !!busy}
-            onClick={() => run("connect")}
+            onClick={() => run(connected ? "disconnect" : "connect")}
           >
-            {connected ? "Restart Codex" : "Connect Codex"}
+            {connected ? "Disconnect Codex" : "Connect Codex"}
           </button>
           <button
             className="icon-button"
@@ -276,7 +335,15 @@ export default function App() {
           </button>
         </div>
       </header>
-      <main className="workspace">
+      <main
+        className="workspace"
+        style={
+          {
+            "--sidebar-width": `${config?.sidebarWidth || 235}px`,
+            "--inspector-width": `${config?.inspectorWidth || 295}px`,
+          } as React.CSSProperties
+        }
+      >
         <aside className="sidebar">
           <div className="eyebrow">PROJECTS</div>
           <button
@@ -284,23 +351,36 @@ export default function App() {
             disabled={pending || !!busy}
             onClick={() => run("select_project")}
           >
-            ＋ Add folder
+            📂 Open project folder
           </button>
           <div className="project-list">
             {config?.projects.map((p) => (
-              <button
+              <div
                 className={`project-card ${p === config.selectedProject ? "active" : ""}`}
                 key={p}
                 title={p}
-                disabled={pending || !!busy}
-                onClick={() => run("reconnect_project", { path: p })}
               >
-                <span className="project-icon">⌂</span>
-                <span className="project-info">
-                  <strong>{tail(p)}</strong>
-                  <span>{p}</span>
-                </span>
-              </button>
+                <button
+                  className="project-select"
+                  disabled={pending || !!busy}
+                  onClick={() => run("reconnect_project", { path: p })}
+                >
+                  <span className="project-icon">⌂</span>
+                  <span className="project-info">
+                    <strong>{tail(p)}</strong>
+                    <span>{p}</span>
+                  </span>
+                </button>
+                <button
+                  className="project-open"
+                  aria-label={`Open ${tail(p)} folder`}
+                  disabled={pending}
+                  title="Open this folder in Explorer"
+                  onClick={() => run("open_project_folder", { path: p })}
+                >
+                  ↗
+                </button>
+              </div>
             ))}
           </div>
           {!config?.projects.length && (
@@ -390,7 +470,21 @@ export default function App() {
             </button>
           </div>
         </aside>
-        <section className="conversation">
+        <div
+          className="resize-handle resize-sidebar"
+          role="separator"
+          aria-label="Resize projects panel"
+          onMouseDown={() => setDragging("sidebar")}
+        />
+        <section
+          className={`conversation composer-${config?.layout || "bottom"}`}
+          style={
+            {
+              "--composer-width": `${composerWidth}px`,
+            } as React.CSSProperties
+          }
+        >
+          <div className="conversation-main">
           <div className="conversation-head">
             <div>
               <div className="eyebrow">
@@ -413,7 +507,12 @@ export default function App() {
                 disabled={!connected || !!busy || pending}
                 onChange={(e) =>
                   config &&
-                  savePrefs({ ...config, model: e.target.value || null })
+                  savePrefs({
+                    ...config,
+                    model: e.target.value || null,
+                    reasoningEffort: null,
+                    serviceTier: null,
+                  })
                 }
               >
                 <option value="">Codex default</option>
@@ -423,17 +522,27 @@ export default function App() {
                   </option>
                 ))}
               </select>
+              <select
+                aria-label="Reasoning effort"
+                value={config?.reasoningEffort || ""}
+                disabled={!connected || !!busy || pending || !effortOptions.length}
+                onChange={(e) =>
+                  config && savePrefs({ ...config, reasoningEffort: e.target.value || null })
+                }
+              >
+                <option value="">Default reasoning</option>
+                {effortOptions.map((option: any) => (
+                  <option value={option.reasoningEffort} key={option.reasoningEffort}>
+                    {option.reasoningEffort}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           {(error || s?.error) && (
             <div role="alert" className="notice error">
               <strong>Needs attention</strong>
               <span>{error || s?.error}</span>
-            </div>
-          )}
-          {s?.warning && (
-            <div className="notice">
-              <span>{s.warning}</span>
             </div>
           )}
           <div
@@ -517,14 +626,29 @@ export default function App() {
               ↓ Follow latest
             </button>
           )}
+          </div>
+          {config?.layout !== "bottom" && (
+            <div
+              className="composer-resize"
+              role="separator"
+              aria-label="Resize message panel"
+              onMouseDown={() => setDragging("composer")}
+            />
+          )}
           <div className="composer-wrap">
             <div className="composer-context">
               <span className="pill muted">
                 {config?.sandbox === "workspace-write"
                   ? "Workspace write"
-                  : "Read only"}
+                  : config?.sandbox === "danger-full-access"
+                    ? "Full access"
+                    : "Read only"}
               </span>
-              <span>Ask on request</span>
+              <span>
+                {config?.approvalPolicy === "never"
+                  ? "Auto-allow enabled"
+                  : "Ask on request"}
+              </span>
             </div>
             <textarea
               aria-label="Message Codex"
@@ -570,6 +694,12 @@ export default function App() {
             </div>
           </div>
         </section>
+        <div
+          className="resize-handle resize-inspector"
+          role="separator"
+          aria-label="Resize activity panel"
+          onMouseDown={() => setDragging("inspector")}
+        />
         <aside className="inspector">
           <div className="inspector-tabs">
             <button
@@ -699,9 +829,42 @@ export default function App() {
           {config?.selectedProject || "No project selected"}
         </span>
         <span>{s?.binary?.version || "Codex 0.163.0"}</span>
+        <span className="account-footer">
+          Account: {s?.account?.account?.email || s?.account?.account?.type || "Not signed in"}
+          <button className="mini" disabled={!connected || pending} onClick={refreshAccount}>
+            ↻
+          </button>
+          <button
+            className="mini"
+            aria-label="Open account and settings"
+            onClick={() => {
+              setPrefs(config ? { ...config } : null);
+              setSettings(true);
+            }}
+          >
+            ⚙
+          </button>
+        </span>
       </footer>
+      {s?.warning && (
+        <div className="notification-tray" role="status">
+          <span>{s.warning}</span>
+          {s.warning.toLowerCase().includes("account") && (
+            <button className="ghost" onClick={refreshAccount} disabled={pending || !connected}>
+              Refresh account
+            </button>
+          )}
+          <button
+            className="icon-button"
+            aria-label="Dismiss notification"
+            onClick={() => setS((current) => (current ? { ...current, warning: null } : current))}
+          >
+            ×
+          </button>
+        </div>
+      )}
       {settings && prefs && (
-        <Modal title="Settings" onClose={() => setSettings(false)}>
+        <Modal title="Settings" className="settings-dialog" onClose={() => setSettings(false)}>
           <div className="settings-grid">
             <label>
               Theme
@@ -737,6 +900,7 @@ export default function App() {
               >
                 <option value="read-only">Read only (default)</option>
                 <option value="workspace-write">Workspace write</option>
+                <option value="danger-full-access">Full access (unsafe)</option>
               </select>
             </label>
             <label>
@@ -748,14 +912,77 @@ export default function App() {
                 }
               >
                 <option value="on-request">Ask when Codex requests</option>
+                <option value="never">Auto-allow (no approval prompts)</option>
+              </select>
+            </label>
+            <label>
+              Reasoning effort
+              <select
+                value={prefs.reasoningEffort || ""}
+                onChange={(e) => setPrefs({ ...prefs, reasoningEffort: e.target.value || null })}
+              >
+                <option value="">Model default</option>
+                {effortOptions.map((option: any) => (
+                  <option value={option.reasoningEffort} key={option.reasoningEffort}>
+                    {option.reasoningEffort}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Reasoning summaries
+              <select
+                value={prefs.reasoningSummary}
+                onChange={(e) => setPrefs({ ...prefs, reasoningSummary: e.target.value })}
+              >
+                <option value="auto">Automatic</option>
+                <option value="concise">Concise</option>
+                <option value="detailed">Detailed activity</option>
+                <option value="none">Hide summaries</option>
+              </select>
+            </label>
+            <label>
+              Service tier
+              <select
+                value={prefs.serviceTier || ""}
+                onChange={(e) => setPrefs({ ...prefs, serviceTier: e.target.value || null })}
+              >
+                <option value="">Model default</option>
+                {tierOptions.map((tier: any) => (
+                  <option value={tier.id} key={tier.id}>{tier.name || tier.id}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Composer placement
+              <select
+                value={prefs.layout}
+                onChange={(e) => setPrefs({ ...prefs, layout: e.target.value })}
+              >
+                <option value="bottom">Bottom of conversation</option>
+                <option value="left">Left of conversation</option>
+                <option value="right">Right of conversation</option>
               </select>
             </label>
           </div>
           <p className="hint">
-            Sandbox changes apply when creating or reopening a thread. Read only
-            is the default; network access for tools remains restricted.
-            Workspace write allows edits inside the selected project.
+            Sandbox and approval changes apply when creating or reopening a
+            thread. Read only + Ask is the safe default. Workspace write keeps
+            edits inside the selected project. Full access and Auto-allow are
+            explicit unsafe modes.
+            <br />
+            Reasoning effort is sent to Codex for every new turn when the selected
+            model advertises it. Higher effort can improve difficult outcomes but
+            uses more time and quota. Service tiers affect speed or availability,
+            not the model's capabilities.
           </p>
+          {prefs.approvalPolicy === "never" || prefs.sandbox === "danger-full-access" ? (
+            <p className="sensitive">
+              Auto-allow and full access can run commands or change files without
+              asking. Use only in a project and account you trust. School policy
+              and the Codex account still control what the server permits.
+            </p>
+          ) : null}
           <div className="dialog-actions">
             <button
               className="send"

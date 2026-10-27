@@ -17,8 +17,8 @@ $codexPath = Join-Path $targetVendor 'codex-path'; if (Test-Path $codexPath) { C
 foreach ($d in @('data','data/codex-home','data/logs','data/temp','projects')) { New-Item -ItemType Directory -Force (Join-Path $stage $d) | Out-Null }
 Copy-Item README-PORTABLE.md,THIRD-PARTY-LICENSES.txt,LICENSE -Destination $stage
 Copy-Item docs -Destination (Join-Path $stage 'docs') -Recurse
-Copy-Item (Join-Path (Split-Path $CodexExecutable) 'codex-code-mode-host.exe') -Destination $stage
-Copy-Item (Join-Path $targetVendor 'codex-package.json') -Destination $stage
+$codeModeHost = Join-Path (Split-Path $CodexExecutable) 'codex-code-mode-host.exe'; if (Test-Path $codeModeHost) { Copy-Item $codeModeHost -Destination $stage }
+$packageManifest = Join-Path $targetVendor 'codex-package.json'; if (Test-Path $packageManifest) { Copy-Item $packageManifest -Destination $stage }
 $hash = (Get-FileHash (Join-Path $stage 'codex.exe') -Algorithm SHA256).Hash; Set-Content (Join-Path $stage 'codex.exe.sha256') "$hash  codex.exe"
 & ./scripts/verify-release.ps1 -ReleaseRoot $stage
 $zip = Join-Path (Resolve-Path $OutputRoot).Path 'RustPortableHarness-win-x64-portable.zip'; if (Test-Path $zip) { Remove-Item $zip -Force }; Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal

@@ -153,6 +153,11 @@ impl Runtime {
                     json!({"id":id,"error":{"code":-32601,"message":"Client capability not provided"}}),
                 );
             }
+            if self.view.config.approval_policy == "never" && protocol::supports_approval(method) {
+                if let Ok(response) = protocol::approval_response(method, "accept", p) {
+                    return Some(json!({"id":id,"result":response}));
+                }
+            }
             let key = id.to_string();
             let a = Approval {
                 key: key.clone(),
@@ -294,6 +299,14 @@ mod tests {
         r.handle(json!({"localExit":1}));
         assert!(r.pending.is_empty());
         assert_eq!(r.view.lifecycle, "Failed");
+    }
+    #[test]
+    fn never_policy_auto_accepts_supported_requests() {
+        let mut r = runtime();
+        r.view.config.approval_policy = "never".into();
+        let reply = r.handle(json!({"id":5,"method":"item/commandExecution/requestApproval","params":{"command":"echo allowed"}}));
+        assert_eq!(reply.unwrap()["result"]["decision"], "accept");
+        assert!(r.pending.is_empty());
     }
     #[test]
     fn active_turn_and_thread_filter() {

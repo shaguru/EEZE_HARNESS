@@ -76,6 +76,14 @@ impl PortablePaths {
         if config.approval_policy == "untrusted" {
             config.approval_policy = "on-request".into();
         }
+        if !["auto", "concise", "detailed", "none"].contains(&config.reasoning_summary.as_str()) {
+            config.reasoning_summary = "auto".into();
+        }
+        if !["bottom", "left", "right"].contains(&config.layout.as_str()) {
+            config.layout = "bottom".into();
+        }
+        config.sidebar_width = config.sidebar_width.clamp(180, 420);
+        config.inspector_width = config.inspector_width.clamp(220, 460);
         if config.schema_version != 1 {
             return Err("Unsupported config version; use the app version that created this portable folder.".into());
         }
@@ -126,6 +134,12 @@ pub struct Config {
     pub font_size: u8,
     pub sandbox: String,
     pub approval_policy: String,
+    pub reasoning_effort: Option<String>,
+    pub reasoning_summary: String,
+    pub service_tier: Option<String>,
+    pub layout: String,
+    pub sidebar_width: u16,
+    pub inspector_width: u16,
     pub labels: std::collections::BTreeMap<String, String>,
     pub debug_log: bool,
 }
@@ -142,6 +156,12 @@ impl Default for Config {
             font_size: 13,
             sandbox: "read-only".into(),
             approval_policy: "on-request".into(),
+            reasoning_effort: None,
+            reasoning_summary: "auto".into(),
+            service_tier: None,
+            layout: "bottom".into(),
+            sidebar_width: 235,
+            inspector_width: 295,
             labels: Default::default(),
             debug_log: false,
         }

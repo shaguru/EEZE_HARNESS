@@ -246,7 +246,7 @@ pub async fn disconnect(app: AppHandle, s: State<'_, AppState>) -> Result<(), St
 }
 async fn set_project(s: &AppState, path: String) -> Result<(), String> {
     let canonical = canonical_project(&path)?;
-    let old = {
+    let was_connected = {
         let mut r = s.shared.lock().unwrap();
         idle(&r)?;
         if !r.view.config.projects.contains(&canonical) {
@@ -260,14 +260,13 @@ async fn set_project(s: &AppState, path: String) -> Result<(), String> {
         r.view.threads.clear();
         r.view.thread_cursor = None;
         r.view.history_cursor = None;
-        r.view.generation += 1;
-        r.view.lifecycle = "Stopped".into();
-        r.rpc.take()
+        r.view.lifecycle = if r.rpc.is_some() { "Ready" } else { "Stopped" }.into();
+        r.rpc.is_some()
     };
-    if let Some(old) = old {
-        old.stop().await;
-    }
     save(s)?;
+    if was_connected {
+        let _ = refresh_threads_inner(s, false).await;
+    }
     Ok(())
 }
 #[tauri::command]
@@ -342,14 +341,17 @@ pub async fn refresh_threads(
 fn policies(s: &AppState) -> Result<Value, String> {
     let r = s.shared.lock().unwrap();
     let c = &r.view.config;
-    if !["read-only", "workspace-write"].contains(&c.sandbox.as_str())
-        || c.approval_policy != "on-request"
+    if !["read-only", "workspace-write", "danger-full-access"].contains(&c.sandbox.as_str())
+        || !["on-request", "never"].contains(&c.approval_policy.as_str())
+        || !["auto", "concise", "detailed", "none"].contains(&c.reasoning_summary.as_str())
     {
         return Err("Unsupported saved policy. Select a supported mode in Settings.".into());
     }
-    Ok(
-        json!({"cwd":project_from_config(c)?,"sandbox":c.sandbox,"approvalPolicy":c.approval_policy,"approvalsReviewer":"user"}),
-    )
+    let mut result = json!({"cwd":project_from_config(c)?,"sandbox":c.sandbox,"approvalPolicy":c.approval_policy,"approvalsReviewer":"user"});
+    if let Some(tier) = &c.service_tier {
+        result["serviceTier"] = json!(tier);
+    }
+    Ok(result)
 }
 fn project_from_config(c: &Config) -> Result<String, String> {
     canonical_project(
@@ -513,7 +515,14 @@ pub async fn send_turn(app: AppHandle, s: State<'_, AppState>, text: String) -> 
             .thread_id
             .clone()
             .ok_or("Create or reopen a thread first")?;
-        let params = json!({"threadId":id,"input":[{"type":"text","text":text}],"model":r.view.config.model,"cwd":project_from_config(&r.view.config)?,"approvalPolicy":r.view.config.approval_policy,"approvalsReviewer":"user"});
+        let mut params = json!({"threadId":id,"input":[{"type":"text","text":text}],"model":r.view.config.model,"cwd":project_from_config(&r.view.config)?,"approvalPolicy":r.view.config.approval_policy,"approvalsReviewer":"user","summary":r.view.config.reasoning_summary});
+        if let Some(effort) = &r.view.config.reasoning_effort {
+            params["effort"] = json!(effort);
+        }
+        if let Some(tier) = &r.view.config.service_tier {
+            params["serviceTier"] = json!(tier);
+            params["serviceTierForTurn"] = json!(tier);
+        }
         r.starting_turn = true;
         r.view.lifecycle = "Busy".into();
         r.view.error = None;
@@ -608,6 +617,12 @@ pub async fn save_preferences(
     model: Option<String>,
     sandbox: String,
     approval_policy: String,
+    reasoning_effort: Option<String>,
+    reasoning_summary: String,
+    service_tier: Option<String>,
+    layout: String,
+    sidebar_width: u16,
+    inspector_width: u16,
     debug_log: bool,
 ) -> Result<(), String> {
     let _op = s.operation.lock().await;
@@ -616,8 +631,12 @@ pub async fn save_preferences(
         idle(&r)?;
         if !["dark", "light", "system"].contains(&theme.as_str())
             || !(11..=20).contains(&font_size)
-            || !["read-only", "workspace-write"].contains(&sandbox.as_str())
-            || approval_policy != "on-request"
+            || !["read-only", "workspace-write", "danger-full-access"].contains(&sandbox.as_str())
+            || !["on-request", "never"].contains(&approval_policy.as_str())
+            || !["auto", "concise", "detailed", "none"].contains(&reasoning_summary.as_str())
+            || !["bottom", "left", "right"].contains(&layout.as_str())
+            || !(180..=420).contains(&sidebar_width)
+            || !(220..=460).contains(&inspector_width)
         {
             return Err("Unsupported preference value".into());
         }
@@ -631,12 +650,52 @@ pub async fn save_preferences(
                 return Err("Choose a model advertised by this Codex connection".into());
             }
         }
+        if let Some(effort) = &reasoning_effort {
+            if let Some(selected) = model.as_ref().or(r.view.config.model.as_ref()) {
+                if let Some(entry) = r.view.models.iter().find(|m| {
+                    m["id"].as_str() == Some(selected) || m["model"].as_str() == Some(selected)
+                }) {
+                    let advertised = entry["supportedReasoningEfforts"]
+                        .as_array()
+                        .map(|values| {
+                            values
+                                .iter()
+                                .any(|v| v["reasoningEffort"].as_str() == Some(effort))
+                        })
+                        .unwrap_or(true);
+                    if !advertised {
+                        return Err("Choose a reasoning effort advertised by this model".into());
+                    }
+                }
+            }
+        }
+        if let Some(tier) = &service_tier {
+            if let Some(selected) = model.as_ref().or(r.view.config.model.as_ref()) {
+                if let Some(entry) = r.view.models.iter().find(|m| {
+                    m["id"].as_str() == Some(selected) || m["model"].as_str() == Some(selected)
+                }) {
+                    let advertised = entry["serviceTiers"]
+                        .as_array()
+                        .map(|values| values.iter().any(|v| v["id"].as_str() == Some(tier)))
+                        .unwrap_or(true);
+                    if !advertised {
+                        return Err("Choose a service tier advertised by this model".into());
+                    }
+                }
+            }
+        }
         let c = &mut r.view.config;
         c.theme = theme;
         c.font_size = font_size;
         c.model = model;
         c.sandbox = sandbox;
         c.approval_policy = approval_policy;
+        c.reasoning_effort = reasoning_effort;
+        c.reasoning_summary = reasoning_summary;
+        c.service_tier = service_tier;
+        c.layout = layout;
+        c.sidebar_width = sidebar_width;
+        c.inspector_width = inspector_width;
         c.debug_log = debug_log;
     }
     save(&s)?;
@@ -785,7 +844,18 @@ pub async fn wipe_account(app: AppHandle, s: State<'_, AppState>) -> Result<(), 
 }
 fn diagnostic_value(s: &AppState) -> Value {
     let r = s.shared.lock().unwrap();
-    json!({"appVersion":"0.1.0","codexExpected":protocol::CODEX_VERSION,"binary":r.view.binary,"root":s.paths.root,"codexHome":s.paths.home,"lifecycle":r.view.lifecycle,"webview2":"Evergreen runtime required; browser profile is under data/webview2","sandbox":r.view.config.sandbox,"approvalPolicy":r.view.config.approval_policy,"authStorage":"Codex file store in data/codex-home; excluded from diagnostics","platform":std::env::consts::OS,"architecture":std::env::consts::ARCH})
+    let system_root = std::env::var_os("SystemRoot").map(PathBuf::from);
+    let powershell = system_root
+        .as_ref()
+        .map(|root| root.join("System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
+        .map(|p| p.exists())
+        .unwrap_or(false);
+    let cmd = system_root
+        .as_ref()
+        .map(|root| root.join("System32\\cmd.exe"))
+        .map(|p| p.exists())
+        .unwrap_or(false);
+    json!({"appVersion":"0.1.0","codexExpected":protocol::CODEX_VERSION,"binary":r.view.binary,"root":s.paths.root,"codexHome":s.paths.home,"lifecycle":r.view.lifecycle,"webview2":"Evergreen runtime required; browser profile is under data/webview2","sandbox":r.view.config.sandbox,"approvalPolicy":r.view.config.approval_policy,"reasoningEffort":r.view.config.reasoning_effort,"serviceTier":r.view.config.service_tier,"authStorage":"Codex file store in data/codex-home; excluded from diagnostics","shells":{"powershell":powershell,"cmd":cmd,"runtimeRequirement":"The harness launches codex.exe directly; shell availability only affects agent-requested commands."},"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH})
 }
 #[tauri::command]
 pub async fn export_diagnostics(s: State<'_, AppState>) -> Result<String, String> {
@@ -812,6 +882,39 @@ pub async fn open_external(url: String) -> Result<(), String> {
             .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_project_folder(s: State<'_, AppState>, path: String) -> Result<(), String> {
+    let canonical = canonical_project(&path)?;
+    if !s
+        .shared
+        .lock()
+        .unwrap()
+        .view
+        .config
+        .projects
+        .contains(&canonical)
+    {
+        return Err("Choose this folder using Add folder first".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer.exe")
+            .arg(&canonical)
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| format!("Could not open the project folder: {e}"))?;
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&canonical)
+            .spawn()
+            .map_err(|e| format!("Could not open the project folder: {e}"))?;
     }
     Ok(())
 }

@@ -4,7 +4,7 @@ RustPortableHarness deliberately keeps the official Codex executable as the poli
 
 * `CODEX_HOME` is set only for the child and points to `data/codex-home/`. It is never added to the user environment.
 * The child working directory is the canonical project selected by the user. Project files are not copied into portable data.
-* First-run defaults are `read-only` sandbox and `on-request` approval policy, routed to the user. This binary rejects the legacy `untrusted` startup configuration even though its generated protocol enum retains the value. The UI offers `workspace-write` after an explicit preference save; `danger-full-access` is unavailable. Read-only does not imply every read command needs approval; Codex decides which operations require a request.
+* First-run defaults are `read-only` sandbox and `on-request` approval policy, routed to the user. This binary rejects the legacy `untrusted` startup configuration even though its generated protocol enum retains the value. The UI offers `workspace-write`, `danger-full-access`, and `never` (auto-allow) only after an explicit preference save and shows an unsafe-mode warning. Read-only does not imply every read command needs approval; Codex decides which operations require a request.
 * Server-originated requests are stored by JSON-RPC ID. The approval pane shows exact method and params. Only the response union generated for the shipped version is emitted.
 * Markdown is rendered with raw HTML disabled; external links are shown in a confirmation dialog and only `https` URLs are opened.
 * Protocol frames and streamed content are bounded. Agent output is displayed as text and is not interpreted as native commands or Tauri calls.

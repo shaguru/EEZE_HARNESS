@@ -53,7 +53,8 @@ pub fn run() {
             commands::diagnostics,
             commands::wipe_account,
             commands::export_diagnostics,
-            commands::open_external
+            commands::open_external,
+            commands::open_project_folder
         ])
         .build(tauri::generate_context!());
     match result {

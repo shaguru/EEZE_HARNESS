@@ -13,6 +13,12 @@
 * {
   box-sizing: border-box;
 }
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
 body {
   margin: 0;
   min-width: 960px;
@@ -77,7 +83,8 @@ button {
 }
 .workspace {
   display: grid;
-  grid-template-columns: 235px minmax(450px, 1fr) 295px;
+  grid-template-columns: var(--sidebar-width, 235px) 6px minmax(450px, 1fr) 6px var(--inspector-width, 295px);
+  height: 0;
   min-height: 0;
   flex: 1;
 }
@@ -86,6 +93,7 @@ button {
   background: rgba(15, 20, 27, 0.78);
   padding: 21px 16px;
   overflow: auto;
+  min-height: 0;
 }
 .sidebar {
   border-right: 1px solid #293340;
@@ -233,7 +241,25 @@ select:focus {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-column: 3;
+  position: relative;
 }
+.resize-handle,
+.composer-resize {
+  position: relative;
+  z-index: 4;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+}
+.resize-handle:hover,
+.composer-resize:hover {
+  background: #3d8bb8;
+}
+.resize-sidebar { grid-column: 2; }
+.resize-inspector { grid-column: 4; }
 .conversation-head {
   min-height: 85px;
   padding: 20px 28px 15px;
@@ -259,6 +285,7 @@ select:focus {
 }
 .messages {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 27px 7%;
 }
@@ -851,6 +878,15 @@ button:disabled {
   font-size: 10px;
   color: #7f94a9;
 }
+.account-footer {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .status-bar > span:nth-child(2) {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -900,6 +936,116 @@ button:disabled {
   max-height: 88vh;
   overflow: auto;
 }
+.settings-dialog {
+  position: fixed;
+  margin: 0;
+  inset: auto 18px 52px auto;
+  width: min(760px, calc(100vw - 36px));
+  max-height: calc(100vh - 86px);
+}
+.settings-dialog::backdrop {
+  background: transparent;
+}
+.notification-tray {
+  position: fixed;
+  z-index: 20;
+  right: 18px;
+  bottom: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(650px, calc(100vw - 36px));
+  padding: 10px 12px;
+  border: 1px solid #3c6074;
+  border-radius: 7px;
+  color: #cde3f2;
+  background: #142535ee;
+  box-shadow: 0 12px 42px #0008;
+  font-size: 11px;
+}
+.notification-tray > span {
+  overflow-wrap: anywhere;
+}
+.notification-tray .icon-button {
+  border: 0;
+  padding: 0 5px;
+}
+.project-card {
+  position: relative;
+  width: 100%;
+  text-align: left;
+}
+.project-select {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+.project-open {
+  border: 0;
+  background: transparent;
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 4px;
+  color: #8acfff;
+  font-size: 15px;
+  opacity: 0.6;
+}
+.project-card:hover .project-open,
+.project-open:focus {
+  opacity: 1;
+}
+.conversation-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.conversation-main .messages {
+  min-height: 0;
+}
+.composer-left,
+.composer-right {
+  display: grid;
+  grid-template-columns: var(--composer-width, 340px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+}
+.composer-left .conversation-main { grid-column: 2; }
+.composer-left .composer-wrap {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+  border-top: 0;
+  border-right: 1px solid #293340;
+  border-bottom: 0;
+  overflow: auto;
+}
+.composer-right { grid-template-columns: minmax(0, 1fr) var(--composer-width, 340px); }
+.composer-right .conversation-main { grid-column: 1; }
+.composer-right .composer-wrap {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  border-top: 0;
+  border-left: 1px solid #293340;
+  overflow: auto;
+}
+.composer-left .composer-resize,
+.composer-right .composer-resize {
+  display: block;
+  position: absolute;
+  inset-block: 0;
+}
+.composer-left .composer-resize { left: var(--composer-width, 340px); }
+.composer-right .composer-resize { right: var(--composer-width, 340px); }
 .dialog::backdrop {
   background: #050a11b8;
 }
@@ -1041,7 +1187,7 @@ button:disabled {
     min-width: 900px;
   }
   .workspace {
-    grid-template-columns: 190px minmax(350px, 1fr) 240px;
+    grid-template-columns: var(--sidebar-width, 190px) 6px minmax(350px, 1fr) 6px var(--inspector-width, 240px);
   }
   .topbar {
     padding: 0 15px;

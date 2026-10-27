@@ -11,6 +11,12 @@ export type Config = {
   fontSize: number;
   sandbox: string;
   approvalPolicy: string;
+  reasoningEffort: string | null;
+  reasoningSummary: string;
+  serviceTier: string | null;
+  layout: "bottom" | "left" | "right" | string;
+  sidebarWidth: number;
+  inspectorWidth: number;
   labels: Record<string, string>;
   debugLog: boolean;
 };
