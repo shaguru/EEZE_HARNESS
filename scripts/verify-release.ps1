@@ -1,10 +1,11 @@
 param([Parameter(Mandatory=$true)][string]$ReleaseRoot)
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path -LiteralPath $ReleaseRoot).Path
-foreach($name in @('RustPortableHarness.exe','codex.exe','README-PORTABLE.md','THIRD-PARTY-LICENSES.txt','docs/licenses/DEPENDENCY-LICENSES.txt')) {
+foreach($name in @('RustPortableHarness.exe','codex.exe','README-PORTABLE.md','START-HERE.txt','THIRD-PARTY-LICENSES.txt','docs/licenses/DEPENDENCY-LICENSES.txt')) {
     if(-not (Test-Path -LiteralPath (Join-Path $root $name))) { throw "Release file missing: $name" }
 }
-foreach($name in @('RustPortableHarness.exe','codex.exe')) {
+$exes=@('RustPortableHarness.exe','codex.exe'); if(Test-Path -LiteralPath (Join-Path $root 'claude.exe')) { $exes += 'claude.exe' }
+foreach($name in $exes) {
     $pe=[IO.File]::OpenRead((Join-Path $root $name))
     try {
         $reader=[IO.BinaryReader]::new($pe)
@@ -22,9 +23,12 @@ if(Test-Path (Join-Path $root 'data')) {
     $files=@(Get-ChildItem -LiteralPath (Join-Path $root 'data') -Recurse -File -Force)
     if($files.Count -gt 0) { throw 'Release staging data must be blank; refusing to package account or app state' }
 }
-foreach($d in @('data','data/codex-home','data/logs','data/temp','projects')) { $null=New-Item -ItemType Directory -Force (Join-Path $root $d) }
+foreach($d in @('data','data/codex-home','data/claude-home','data/accounts','data/logs','data/temp','projects')) { $null=New-Item -ItemType Directory -Force (Join-Path $root $d) }
 $probe=Join-Path $root 'data/.verify-write'
 Set-Content -LiteralPath $probe 'ok';Remove-Item -LiteralPath $probe -Force
 Write-Host "Release verified: $root"
 Write-Host 'Windows x64 executables; official Codex hash/version match; portable data is blank and writable.'
+$claude=Join-Path $root 'claude.exe'
+if(Test-Path -LiteralPath $claude) { $env:DISABLE_AUTOUPDATER='1'; $cv=(& $claude --version).Trim(); if($cv -notmatch '\(Claude Code\)$') { throw "claude.exe is not Claude Code: $cv" }; Write-Host "Claude Code included: $cv" } else { Write-Host 'Claude Code: not included' }
+if(Test-Path -LiteralPath (Join-Path $root 'tools/PortableGit/bin/bash.exe')) { Write-Host 'PortableGit: included' }
 Write-Host 'WebView2: required at runtime'

@@ -1,58 +1,99 @@
 # RustPortableHarness portable release
 
-## First launch
+A simple desktop app for using an AI coding assistant on a school computer. It runs from a folder on
+your Desktop: no installer, no administrator rights, nothing added to Windows. It can use either:
 
-1. Unzip the complete `RustPortableHarness-win-x64-portable.zip` to a folder you own, such as `Desktop\RustPortableHarness`.
-2. Double-click `RustPortableHarness.exe`. If Windows presents a policy warning, follow your school's software policy; this app cannot and should not bypass it.
-3. Click **Add folder** and choose the project folder Codex is allowed to access.
-4. Click **Connect Codex**, then open **Account & settings** and complete **Device sign-in** or **Browser sign-in**. The browser flow is the official Codex account flow.
-5. Click **New thread**, write a request, and press **Ctrl+Enter** or **Send**.
-6. Review each command or file-change approval. **Approve once** sends only the decision allowed by the shipped App Server schema. **Decline** lets Codex continue without the operation; **Stop turn** cancels the active turn.
+- **Codex** (the official OpenAI Codex program, `codex.exe`) with a **ChatGPT** account, or
+- **Claude** (the official Anthropic Claude Code program, `claude.exe`) with a **Claude** account.
 
-## Permission and quality controls
+The official programs do the AI work, the sign-in and the safety checks. This app is the window around them.
 
-Settings exposes the same kinds of controls as the Codex desktop client:
+## First launch (students)
 
-- **Read only + Ask** is the safe default. Codex can inspect the selected project, and requests that need more access pause for review.
-- **Workspace write + Ask** allows approved edits inside the selected project while still asking before requested operations.
-- **Workspace write + Auto-allow** removes approval prompts for the turn. Use this only in a project you trust.
-- **Full access + Auto-allow** removes the workspace boundary as well. It is intentionally an explicit, unsafe choice and may still be refused by account or school policy.
+1. **Unzip first.** Right-click the ZIP → **Extract All…** → choose your Desktop. Don't run the app from
+   inside the ZIP; the app will warn you if you do.
+2. Open the new folder and double-click **RustPortableHarness.exe**.
+3. At the top, choose **Codex** or **Claude**, whichever you have an account for.
+4. Click **Choose folder** and pick your project folder. Make one folder per project, for example
+   `Desktop\my-game`. Don't pick your whole Desktop; the app asks you to confirm if you do.
+5. Click **Sign in**. Your browser opens the official sign-in page. Use **your own** account.
+6. Type in the message box and press **Enter** (Shift+Enter adds a new line).
 
-The **Reasoning effort** setting was previously missing from this harness. It is now sent to Codex for every new turn when the selected model advertises that effort. Higher effort can improve hard coding or planning tasks but costs more time and quota. **Detailed reasoning summaries** show server-provided activity summaries; private chain-of-thought is never exposed. The service-tier control affects speed or availability when the model advertises tiers. Tool use remains controlled by the official Codex App Server and the selected policy.
+When the AI wants to edit a file or run a command, a **Permission needed** box explains what it wants to
+do. Choose **Approve once**, **Decline** or **Stop turn**.
 
-The composer can sit at the bottom, left, or right of the conversation. Drag the panel separators to resize the projects, composer, and activity areas. Only the message and activity panes scroll; the desktop shell stays fixed. Selecting a saved project changes the active workspace without disconnecting Codex. Use the folder arrow on a project card to open it in Windows Explorer, and use the upper-right button to connect or disconnect Codex.
+## The main screen
 
-The app keeps configuration, logs, WebView2 profile data, and Codex account state under `data/` beside the executable. `data/codex-home/` may contain sensitive authentication state. Sign out before sharing the folder or leaving it on a shared computer. The app never bundles developer credentials, project folders, or login tokens.
+- **Codex | Claude** switch (top left): changes which AI you are talking to. Each keeps its own chats.
+- **Usage meter** (top right): the `5h` bar is the 5-hour limit and `Wk` is the weekly limit, for the
+  account in use. Green is fine, amber means getting close, red means nearly out. Click it to open
+  **Accounts & usage**.
+- **Message box**: drag its ⠿ handle and drop it on the **left**, **bottom** or **right**, or click the
+  three small layout buttons on it. Drag the line beside it to make it bigger or smaller (double-click
+  that line to reset). The dropdown on the message box sets what the AI may do:
+  - **Ask before changes** (default): reads and explains, and asks before every edit or command.
+  - **Edit files, ask for commands**: may edit files inside the project, and asks before commands.
+  - **Work without asking**: no questions. Use only in a project you trust and can restore.
+- **Activity panel** (▤ button): shows the commands, file edits and tools the AI used. On small screens it
+  opens as a side drawer.
 
-## What the portable folder contains
+## Accounts & usage
+
+Open it by clicking the usage meter or your account name.
+
+- **Add account** keeps several sign-ins on this computer, for example a school account and a personal
+  account. Each account has its own folder, chats and usage history.
+- **Use** switches to that account. **Sign in** / **Sign out** manage it. Codex also offers **Sign in with
+  a code** if the browser can't return to the app.
+- Each account shows its **5-hour** and **weekly** usage and when they reset. The account in use updates
+  while you chat. **Check all accounts** refreshes every ChatGPT account. Claude only reports usage
+  while it's answering, so other Claude accounts show their last known values.
+
+Each person should use their own account. The app doesn't share or rotate accounts automatically. Both
+OpenAI's and Anthropic's terms forbid sharing logins or using several accounts to get around usage
+limits, and doing so can get accounts suspended.
+
+## Settings
+
+**Settings** (⚙) keeps the everyday options: what the AI may do, message box position, Enter-to-send,
+theme, text size, showing the Activity panel, and auto-connect.
+
+**Advanced…** is a separate panel for teachers: proxy and school certificate, choosing `codex.exe` or
+`claude.exe`, the Codex Windows sandbox, reasoning summaries and service tier, full access, whether a
+project's own Claude settings may apply, diagnostics, and wiping an account.
+
+## What's in the folder
 
 ```text
 RustPortableHarness/
   RustPortableHarness.exe
-  codex.exe                         # official Codex CLI 0.163.0 x64
-  codex-resources/                  # official runtime helpers when supplied
-  data/                             # created on first launch
-  projects/                         # empty convenience folder
-  README-PORTABLE.md
-  THIRD-PARTY-LICENSES.txt
+  START-HERE.txt                     # the short version of this page
+  codex.exe                          # official Codex CLI 0.163.0 x64
+  claude.exe                         # official Claude Code 2.1+ (only in the Claude build)
+  tools/PortableGit/                 # optional: gives Claude a Bash shell for commands
+  data/                              # settings, sign-ins, chats, temp files (created on first launch)
+    codex-home/  claude-home/  accounts/  logs/  temp/  webview2/
+  projects/                          # empty convenience folder
 ```
 
-The folder is relocatable. Paths are anchored to the executable location, while the selected project remains at its existing absolute path. Moving a project requires reconnecting it from the project list.
+Everything the app writes stays inside this folder, including the AI programs' temp files. The folder can
+be moved or copied to a USB drive. Your projects stay where they are.
 
-## Troubleshooting
+**`data/` contains your sign-ins.** Sign out before you share the folder or leave a shared computer, and
+don't copy someone else's `data` folder.
 
-- **WebView2 Runtime missing:** install or request the approved Microsoft Edge WebView2 Runtime for the computer. The portable app does not install a runtime. A fixed-runtime fallback is not included until it can be tested as a supported Tauri distribution.
-- A separate native Rust GUI (for example, egui) could reuse the backend in a future release for computers without WebView2. It is not included in this MVP.
-- **Codex missing or incompatible:** restore the official `codex.exe` from the release ZIP. Settings shows the validated version, path, and SHA-256. This build accepts `codex-cli 0.163.0` only because its protocol schemas were generated from that binary.
-- **Authentication or network error:** check the account, network, proxy, and school policy. No API key is saved by the harness. Restart Codex after changing network conditions.
-- **Project cannot be opened:** choose a folder you can read and write where needed. The harness never copies the project into `data/`.
-- **Permission request is unfamiliar:** decline it or stop the turn. The client never auto-approves.
-- **Portable data is read-only:** move the folder to a writable location you own. No machine-wide registry or PATH changes are made.
+If `claude.exe` isn't in the folder, the app also finds Claude Code installed for your Windows account
+(`%USERPROFILE%\.local\bin\claude.exe`), or you can choose it in **Settings → Advanced**.
 
-The release does not require PowerShell, Node.js, Python, Rust, npm, or an installed Codex command on the target computer. Those are build-time tools. At runtime the app starts the bundled `codex.exe` directly and opens project folders through Windows Explorer. See [docs/SCHOOL-DEPLOYMENT.md](docs/SCHOOL-DEPLOYMENT.md) for the remaining school-machine dependencies and failure modes.
+## If something goes wrong
 
-## Security and school computers
+The app explains common problems in plain words and offers a button that helps. More detail:
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). Teachers preparing a classroom should read
+[docs/SCHOOL-DEPLOYMENT.md](docs/SCHOOL-DEPLOYMENT.md).
 
-Codex actions can read or change project files and, when explicitly approved, run commands according to the Codex sandbox. Network-enabled agent actions may send source material to remote services. Use only projects and accounts allowed by your school's policy. Do not copy `data/codex-home/` between computers.
+The release doesn't need PowerShell, Node.js, Python, Rust or npm on the student computer. It does need
+the Microsoft Edge WebView2 Runtime (part of Windows 10/11), network access to the AI service, and an
+eligible account.
 
-See [docs/SECURITY.md](docs/SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [docs/PROTOCOL-VERSION.md](docs/PROTOCOL-VERSION.md).
+See also [docs/SECURITY.md](docs/SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+[docs/PROTOCOL-VERSION.md](docs/PROTOCOL-VERSION.md).

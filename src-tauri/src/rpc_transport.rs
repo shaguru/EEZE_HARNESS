@@ -42,7 +42,7 @@ impl Rpc {
         binary: &Path,
         home: &Path,
         cwd: &Path,
-        _generation: u64,
+        env: &crate::netenv::ChildEnv,
         handler: EventHandler,
     ) -> Result<Self, String> {
         let mut command = Command::new(binary);
@@ -63,13 +63,12 @@ impl Rpc {
                 "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
                 "rust_portable_harness",
             )
-            .env_remove("OPENAI_API_KEY")
-            .env_remove("CODEX_API_KEY")
             .current_dir(cwd)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        env.apply(&mut command);
         if let Some(root) = binary.parent() {
             let tools = root.join("codex-path");
             if tools.is_dir() {
@@ -86,7 +85,7 @@ impl Rpc {
         command.creation_flags(0x08000000);
         let mut child = command
             .spawn()
-            .map_err(|e| format!("Cannot start companion Codex executable: {e}"))?;
+            .map_err(|e| format!("Cannot start codex.exe: {e}. If Windows blocked it, ask IT to allow the app folder; if it is missing, extract the ZIP again."))?;
         #[cfg(windows)]
         let job = Job::assign(&child)?;
         let mut stdin = child.stdin.take().ok_or("Codex stdin unavailable")?;
@@ -249,11 +248,12 @@ fn fail_pending(p: &Pending, message: &str) {
     }
 }
 
+/// Windows job object that kills the agent and everything it started when the app closes.
 #[cfg(windows)]
-struct Job(isize);
+pub(crate) struct Job(isize);
 #[cfg(windows)]
 impl Job {
-    fn assign(child: &tokio::process::Child) -> Result<Self, String> {
+    pub(crate) fn assign(child: &tokio::process::Child) -> Result<Self, String> {
         use windows_sys::Win32::{Foundation::CloseHandle, System::JobObjects::*};
         unsafe {
             let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -405,7 +405,13 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let temp = tempfile::tempdir().unwrap();
         let handler: EventHandler = Arc::new(|_| {});
-        let rpc = Rpc::spawn(&root.join("codex.exe"), temp.path(), root, 0, handler)
+        let rpc = Rpc::spawn(
+            &root.join("codex.exe"),
+            temp.path(),
+            root,
+            &crate::netenv::ChildEnv::default(),
+            handler,
+        )
             .await
             .unwrap();
         let initialized = rpc.handshake().await.unwrap();

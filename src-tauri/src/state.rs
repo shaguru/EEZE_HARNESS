@@ -1,4 +1,4 @@
-use crate::{portable_paths::Config, protocol, rpc_transport::Rpc};
+use crate::{claude, netenv::Notice, portable_paths::Config, protocol, rpc_transport::Rpc};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, sync::Mutex};
@@ -42,12 +42,31 @@ pub struct Snapshot {
     pub generation: u64,
     pub thread_cursor: Option<String>,
     pub history_cursor: Option<String>,
+    /// School-computer problems found at startup (unzipped in temp, OneDrive, low disk, ...).
+    pub notices: Vec<Notice>,
+    pub claude_binary: Option<BinaryInfo>,
+    /// Model, permission mode and shell reported by the running Claude session.
+    pub claude_info: Value,
+    /// Which agent programs and shells were found beside the app.
+    pub engines: Value,
 }
 pub struct Runtime {
     pub view: Snapshot,
     pub rpc: Option<Rpc>,
     pub pending: BTreeMap<String, Approval>,
     pub starting_turn: bool,
+    pub claude: Option<claude::Session>,
+    /// Bumped whenever a Claude process is replaced, so events from an old process are ignored.
+    pub claude_gen: u64,
+    /// The open Claude conversation already exists on disk, so restarts use --resume.
+    pub claude_has_history: bool,
+    pub claude_msg: Option<String>,
+    pub claude_interrupting: bool,
+    pub claude_login: Option<claude::Login>,
+    pub login_gen: u64,
+    /// Config changed from an event (usage); the event handler saves it.
+    pub config_dirty: bool,
+    pub seq: u64,
 }
 impl Runtime {
     pub fn new(config: Config, root: String) -> Self {
@@ -72,10 +91,73 @@ impl Runtime {
                 generation: 0,
                 thread_cursor: None,
                 history_cursor: None,
+                notices: vec![],
+                claude_binary: None,
+                claude_info: Value::Null,
+                engines: Value::Null,
             },
             rpc: None,
             pending: Default::default(),
             starting_turn: false,
+            claude: None,
+            claude_gen: 0,
+            claude_has_history: false,
+            claude_msg: None,
+            claude_interrupting: false,
+            claude_login: None,
+            login_gen: 0,
+            config_dirty: false,
+            seq: 0,
+        }
+    }
+    pub fn next_id(&mut self, prefix: &str) -> String {
+        self.seq += 1;
+        format!("{prefix}-{}", self.seq)
+    }
+    /// Stores usage for the active account of a provider. With merge, windows missing from a sparse
+    /// update keep their previous value.
+    pub fn set_usage(&mut self, provider: &str, usage: Value, merge: bool) {
+        let id = self.view.config.active_account(provider).id;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if let Some(account) = self.view.config.account_mut(&id) {
+            let mut next = if merge {
+                account.usage.clone().unwrap_or_else(|| json!({}))
+            } else {
+                json!({})
+            };
+            if let (Some(target), Some(src)) = (next.as_object_mut(), usage.as_object()) {
+                for (k, v) in src {
+                    if !v.is_null() {
+                        target.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            if account.usage.as_ref() != Some(&next) {
+                account.usage = Some(next);
+                account.usage_at = Some(now);
+                self.config_dirty = true;
+            }
+        }
+    }
+    pub fn trim_items(&mut self) {
+        if self.view.items.len() > 1600
+            || self
+                .view
+                .items
+                .iter()
+                .map(|i| i.to_string().len())
+                .sum::<usize>()
+                > 12 * 1024 * 1024
+        {
+            let count = (self.view.items.len() / 4).max(1);
+            self.view.items.drain(..count);
+            self.view.warning = Some(
+                "Older visible items were trimmed from memory. Reopen the thread to load history."
+                    .into(),
+            );
         }
     }
     pub fn active(&self) -> bool {
@@ -108,22 +190,7 @@ impl Runtime {
         } else {
             self.view.items.push(item);
         }
-        if self.view.items.len() > 1600
-            || self
-                .view
-                .items
-                .iter()
-                .map(|i| i.to_string().len())
-                .sum::<usize>()
-                > 12 * 1024 * 1024
-        {
-            let count = (self.view.items.len() / 4).max(1);
-            self.view.items.drain(..count);
-            self.view.warning = Some(
-                "Older visible items were trimmed from memory. Reopen the thread to load history."
-                    .into(),
-            );
-        }
+        self.trim_items();
     }
     pub fn handle(&mut self, frame: Value) -> Option<Value> {
         if let Some(e) = frame.get("localError").and_then(Value::as_str) {
@@ -245,13 +312,13 @@ impl Runtime {
                             .into(),
                     );
                 } else {
-                    self.view.warning =
-                        Some("Sign-in completed. Refresh account status in Settings.".into());
+                    self.view.warning = Some("Signed in. You can start chatting.".into());
                 }
             }
-            "account/updated" => {
-                self.view.warning =
-                    Some("Account changed. Refresh account status in Settings.".into());
+            "account/updated" => {}
+            "account/rateLimits/updated" => {
+                let usage = codex_usage(&p["rateLimits"]);
+                self.set_usage("codex", usage, true);
             }
             "warning" => {
                 self.view.warning = p["message"].as_str().map(str::to_string);
@@ -264,7 +331,23 @@ impl Runtime {
         None
     }
 }
-fn append(item: &mut Value, field: &str, delta: &str, limit: usize) {
+/// Codex reports a primary (usually 5-hour) and secondary (usually weekly) window.
+pub fn codex_usage(s: &Value) -> Value {
+    let window = |w: &Value| {
+        if w.is_object() {
+            json!({"usedPercent": w["usedPercent"], "windowMins": w["windowDurationMins"], "resetsAt": w["resetsAt"]})
+        } else {
+            Value::Null
+        }
+    };
+    json!({
+        "primary": window(&s["primary"]),
+        "secondary": window(&s["secondary"]),
+        "limitReached": s["rateLimitReachedType"].is_string(),
+        "plan": s["planType"],
+    })
+}
+pub(crate) fn append(item: &mut Value, field: &str, delta: &str, limit: usize) {
     let text = item[field].as_str().unwrap_or("");
     if text.len() + delta.len() <= limit {
         item[field] = json!(format!("{text}{delta}"));
@@ -278,7 +361,9 @@ pub type Shared = std::sync::Arc<Mutex<Runtime>>;
 mod tests {
     use super::*;
     fn runtime() -> Runtime {
-        let mut r = Runtime::new(Config::default(), "test".into());
+        let mut c = Config::default();
+        c.normalize();
+        let mut r = Runtime::new(c, "test".into());
         r.view.thread_id = Some("t".into());
         r
     }
@@ -307,6 +392,14 @@ mod tests {
         let reply = r.handle(json!({"id":5,"method":"item/commandExecution/requestApproval","params":{"command":"echo allowed"}}));
         assert_eq!(reply.unwrap()["result"]["decision"], "accept");
         assert!(r.pending.is_empty());
+    }
+    #[test]
+    fn codex_rate_limit_updates_merge_into_usage() {
+        let mut r = runtime();
+        r.handle(json!({"method":"account/rateLimits/updated","params":{"rateLimits":{"primary":{"usedPercent":30,"windowDurationMins":300,"resetsAt":5},"secondary":null}}}));
+        let usage = r.view.config.active_account("codex").usage.unwrap();
+        assert_eq!(usage["primary"]["usedPercent"], 30);
+        assert!(r.config_dirty);
     }
     #[test]
     fn active_turn_and_thread_filter() {

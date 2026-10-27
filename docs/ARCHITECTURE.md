@@ -1,34 +1,50 @@
 # Architecture
 
-The browser UI never receives a raw process handle, shell bridge, filesystem bridge, or API key. Tauri commands are narrow domain operations and the Rust process owns the child transport.
+The browser UI never receives a raw process handle, shell bridge, filesystem bridge, or API key. Tauri
+commands are narrow domain operations and the Rust process owns the child transports. Two engines share
+one snapshot model, so the UI renders Codex and Claude the same way.
 
 ```mermaid
 sequenceDiagram
   participant UI as React UI
   participant T as Tauri commands
-  participant R as Rpc runtime
+  participant R as Runtime snapshot
   participant C as codex.exe app-server
-  UI->>T: connect()
-  T->>R: spawn beside executable + CODEX_HOME=data/codex-home
-  R->>C: initialize (one JSON object per line)
-  C-->>R: initialize result
-  R->>C: initialized notification
-  R->>C: model/list, account/read
-  R-->>UI: version, models, account, lifecycle
-  UI->>T: open_thread / send_turn
-  T->>R: validated request
-  R->>C: thread/start or thread/resume; turn/start
-  C-->>R: turn/item/delta notifications
-  R-->>UI: snapshot generation event
-  C->>R: server request (approval)
-  R-->>UI: pending approval with exact params
+  participant K as claude.exe -p stream-json
+  UI->>T: connect() (provider = codex | claude)
+  alt Codex
+    T->>C: spawn with CODEX_HOME=data/<account>, initialize, model/list, account/read, account/rateLimits/read
+    C-->>R: turn/item/delta notifications, approvals, rateLimits/updated
+  else Claude
+    T->>K: claude --version, auth status --json
+    UI->>T: open_thread → spawn claude -p … --session-id|--resume <uuid> (CLAUDE_CONFIG_DIR=data/<account>)
+    T->>K: control_request initialize (models), user message
+    K-->>R: stream_event deltas, assistant/user messages, can_use_tool, rate_limit_event, result
+  end
+  R-->>UI: harness-changed → snapshot()
   UI->>T: decide(key, decision)
-  T->>R: schema-defined JSON-RPC response
-  R->>C: response with matching request id
+  T->>C: JSON-RPC response (Codex) / T->>K: control_response allow|deny (Claude)
 ```
 
-`Runtime` is the authoritative in-memory snapshot. It stores bounded visible items, history cursors, active turn state, model/account data, diffs supplied by Codex, and pending approvals. UI remounts request `snapshot()` and subscribe only to a generation-change event. A stale child generation cannot mutate a replacement connection.
+* `state.rs` — `Runtime` is the authoritative in-memory snapshot (items, threads, approvals, models,
+  account, usage, notices). Generations stop events from a replaced process from changing state.
+* `rpc_transport.rs` — Codex JSON-RPC over stdio (8 MiB frames, request timeouts, Job Object).
+* `claude.rs` — Claude process per open conversation; maps stream-json onto the shared item model
+  (`agentMessage`, `commandExecution`, `fileChange`, `toolCall`, `reasoning`), lists and loads chats
+  from `projects/<sanitized cwd>/<uuid>.jsonl`, and runs `claude auth login|logout|status`. When the
+  model, effort, permission mode, account or network settings change, the process restarts with
+  `--resume`.
+* `netenv.rs` — child environment (proxy, CA, temp folder, removed variables) and school-computer
+  startup checks (inside a ZIP, OneDrive, low disk, network share, long path, PAC proxy).
+* `portable_paths.rs` — portable folder layout, config with automatic repair of old or invalid values,
+  per-account homes, atomic saves with retries, single-instance lock.
+* `commands.rs` — Tauri commands; each routes to the active provider.
 
-The child process has independent stdout, stderr, and lifecycle tasks. Stdout is JSONL and has an 8 MiB frame limit. Stderr is consumed for back-pressure but never forwarded as protocol or rendered as agent output. Requests have monotonically increasing IDs, a timeout, and a pending map. All writes go through one Tokio channel.
+Usage meters: Codex sends `account/rateLimits/read` / `account/rateLimits/updated` (primary ≈ 5-hour,
+secondary ≈ weekly). Claude sends `rate_limit_event` with `five_hour` / `seven_day` utilization while it
+answers. Values are stored per account in `config.json` with a timestamp, so inactive accounts show
+their last known usage.
 
-Shutdown cancels pending requests, drops the child containment job, and stops accepting UI operations. Unexpected exit sets a failed lifecycle and clears approvals; the user must explicitly reconnect. The client never replays an in-flight command.
+Shutdown cancels pending requests, stops both child types (Job Objects kill descendants), and cancels a
+running sign-in. An unexpected Codex exit sets a failed lifecycle; an unexpected Claude exit ends the turn
+and the next message restarts the process. The client never replays an in-flight command.
