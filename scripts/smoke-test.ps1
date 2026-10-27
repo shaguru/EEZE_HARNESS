@@ -1,0 +1,2 @@
+param([Parameter(Mandatory=$true)][string]$ReleaseRoot)
+$ErrorActionPreference='Stop';$root=(Resolve-Path $ReleaseRoot).Path;Push-Location $root;try{& .\codex.exe --version; if($LASTEXITCODE -ne 0){throw 'Codex version smoke test failed'};Write-Host 'Portable folder is ready for an interactive standard-user test.';Write-Host 'Run .\RustPortableHarness.exe and verify WebView2, sign-in, project selection, thread, streaming, approval, and shutdown.'}finally{Pop-Location}

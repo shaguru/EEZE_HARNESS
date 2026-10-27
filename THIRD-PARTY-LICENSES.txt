@@ -1,0 +1,10 @@
+RustPortableHarness uses these redistributable components:
+
+* RustPortableHarness source: project license in LICENSE.
+* Tauri and its Rust dependencies: each package's license is available in the Cargo registry and in the package metadata.
+* React, Vite, TypeScript, React Markdown, remark-gfm, and their dependencies: MIT licenses as listed in package metadata.
+* Monaco Editor 0.56.0 and DOMPurify 3.4.17: see the full dependency license texts in docs/licenses/DEPENDENCY-LICENSES.txt.
+* Codex CLI 0.163.0 x64: official `@openai/codex` Windows package, Apache License 2.0. The source repository and package notices are recorded in docs/PROTOCOL-VERSION.md.
+* If `codex-resources/voice/` is distributed, retain every notice and license file shipped in that directory. It includes LGPL-2.1 and the notices for libffi, Opus, PCRE2, zlib, and related runtime files.
+
+No account credentials, cookies, developer CODEX_HOME, or user projects are part of the release staging process.

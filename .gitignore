@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-portable/
+.cache/
+src-tauri/target/
+src-tauri/gen/
+data/
+codex.exe
+codex-resources/
+projects/
+*.log
+.env*
+!tests/fixtures/

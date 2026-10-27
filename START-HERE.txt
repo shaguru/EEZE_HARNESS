@@ -1,0 +1,36 @@
+RustPortableHarness - quick start for students
+==============================================
+
+1. Unzip first. Right-click the ZIP file > "Extract All..." > choose your Desktop > Extract.
+   Do NOT double-click the app while it is still inside the ZIP.
+
+2. Open the new RustPortableHarness folder and double-click RustPortableHarness.exe.
+   If Windows says "Windows protected your PC", only click "More info" > "Run anyway"
+   if your school allows it. Otherwise ask your teacher.
+
+3. At the top, pick the AI you have an account for:
+      Codex  = uses a ChatGPT account
+      Claude = uses a Claude account
+
+4. Click "Choose folder" and pick the folder of your project.
+   Make one folder per project (for example Desktop\my-game). Do not pick your whole Desktop.
+
+5. Click "Sign in". Your web browser opens. Sign in with YOUR OWN account, then come back.
+
+6. Type your question in the message box and press Enter.
+   The AI asks before it changes files or runs commands. Read each request, then
+   click "Approve once" or "Decline".
+
+Handy tips
+----------
+- Move the message box: drag its dotted handle, or click the small left / bottom / right
+  buttons on the message box.
+- See how much you have used: the 5h (five hours) and Wk (weekly) bars at the top.
+  Click them to see all your accounts.
+- Something wrong? The app shows a short explanation and a button that helps.
+  Teachers: Settings > Advanced has network, certificate and diagnostics options.
+
+Before you leave a shared computer
+----------------------------------
+Click the bars at the top > "Sign out". Do not copy the "data" folder to other people:
+it contains your sign-in.

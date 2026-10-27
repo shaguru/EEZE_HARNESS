@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "tests": [
+    "Markdown HTML blocked",
+    "external link requires explicit action",
+    "bundled Monaco patch viewer loads",
+    "no automatic approval",
+    "decline correlates to request ID"
+  ],
+  "viewport": "1366x768",
+  "errors": []
+}
