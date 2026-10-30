@@ -22,4 +22,10 @@ or Advanced). If that's not enough:
 | Settings won't save | The folder may be read-only, synced by OneDrive, or blocked by Controlled folder access. See SCHOOL-DEPLOYMENT.md. |
 | "Already open from this folder" | Switch to the open window in the taskbar. |
 | A Claude chat won't reopen | The chat file may have moved or been archived. Start a new chat. |
+| Codex says it cannot write files | Choose **Edit files in this project** on the message box (or click **Let Codex edit this project**). |
+| "… is not set up yet" | Open **Programming tools** and get that tool. |
+| A tool download fails | The message says why (blocked site, proxy, certificate, disk full). Ask IT to allow the sites in SCHOOL-DEPLOYMENT.md, or use a classroom copy with tools included. |
+| The AI can't find python/cargo/npm | After adding tools, press **Restart Codex** in the banner (Claude restarts by itself). |
+| ▶ Run does nothing useful | Run starts `uv run main.py`, `cargo run` or `npm run dev`. For other projects use **Terminal**. |
+| A Rust build fails with "linker" or "dlltool" | Get Rust again in Programming tools (it adds the Windows helpers), and keep the app folder path short. |
 | An approval request looks unfamiliar | Decline it or press Stop turn. The app never answers approvals by itself unless you chose "Work without asking". |

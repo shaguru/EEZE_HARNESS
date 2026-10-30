@@ -248,6 +248,15 @@ pub struct Config {
     /// "" = automatic (environment, then Windows proxy settings), "none" = direct, otherwise a proxy URL.
     pub proxy: String,
     pub ca_certificate: Option<String>,
+    /// 0 = written before "Edit files" became the default; upgraded once by normalize().
+    #[serde(default = "zero")]
+    pub permission_defaults: u32,
+    /// Set when normalize() upgraded the old read-only default, so the app can say so once.
+    #[serde(skip)]
+    pub migrated_permissions: bool,
+}
+fn zero() -> u32 {
+    0
 }
 impl Default for Config {
     fn default() -> Self {
@@ -260,7 +269,9 @@ impl Default for Config {
             model: None,
             theme: "dark".into(),
             font_size: 13,
-            sandbox: "read-only".into(),
+            // Codex refuses every file write in read-only mode, so projects default to editable
+            // (still limited to the project folder, and still asking before going outside it).
+            sandbox: "workspace-write".into(),
             approval_policy: "on-request".into(),
             reasoning_effort: None,
             reasoning_summary: "auto".into(),
@@ -284,6 +295,8 @@ impl Default for Config {
             auto_connect: true,
             proxy: String::new(),
             ca_certificate: None,
+            permission_defaults: 1,
+            migrated_permissions: false,
         }
     }
 }
@@ -295,6 +308,13 @@ impl Config {
         }
         if !["read-only", "workspace-write", "danger-full-access"].contains(&self.sandbox.as_str()) {
             self.sandbox = "read-only".into();
+        }
+        if self.permission_defaults < 1 {
+            if self.sandbox == "read-only" && self.approval_policy == "on-request" {
+                self.sandbox = "workspace-write".into();
+                self.migrated_permissions = true;
+            }
+            self.permission_defaults = 1;
         }
         if !["auto", "concise", "detailed", "none"].contains(&self.reasoning_summary.as_str()) {
             self.reasoning_summary = "auto".into();
@@ -483,6 +503,23 @@ mod tests {
         let p = PortablePaths::at(t.path().to_path_buf()).unwrap();
         fs::write(p.data.join("config.json"), b"\xEF\xBB\xBF{\"schemaVersion\":1,\"theme\":\"light\"}").unwrap();
         assert_eq!(p.load().unwrap().theme, "light");
+    }
+    #[test]
+    fn old_read_only_default_is_upgraded_once() {
+        let t = tempfile::tempdir().unwrap();
+        let p = PortablePaths::at(t.path().to_path_buf()).unwrap();
+        fs::write(p.data.join("config.json"), br#"{"schemaVersion":1,"sandbox":"read-only","approvalPolicy":"on-request"}"#).unwrap();
+        let c = p.load().unwrap();
+        assert_eq!(c.sandbox, "workspace-write");
+        assert!(c.migrated_permissions);
+        // A deliberate read-only choice made later is kept.
+        let mut c2 = c.clone();
+        c2.sandbox = "read-only".into();
+        p.save(&c2).unwrap();
+        let c3 = p.load().unwrap();
+        assert_eq!(c3.sandbox, "read-only");
+        assert!(!c3.migrated_permissions);
+        assert_eq!(Config::default().sandbox, "workspace-write");
     }
     #[test]
     fn account_homes_are_separate_and_inside_data() {

@@ -4,7 +4,9 @@ mod netenv;
 mod portable_paths;
 mod protocol;
 mod rpc_transport;
+mod scaffold;
 mod state;
+mod tools;
 use commands::AppState;
 use portable_paths::PortablePaths;
 use std::sync::{Arc, Mutex};
@@ -34,11 +36,24 @@ pub fn run() {
         Ok(c) => c,
         Err(e) => return startup_error(&e),
     };
+    if config.migrated_permissions {
+        let _ = paths.save(&config);
+    }
+    let _ = std::fs::create_dir_all(paths.root.join("projects"));
     let result = tauri::Builder::default()
         .setup(move |app| {
             let mut runtime = state::Runtime::new(config.clone(), paths.root.to_string_lossy().into());
             runtime.view.notices = netenv::startup_notices(&paths.root, &config);
             runtime.view.engines = commands::engines(&paths, &config);
+            commands::refresh_env_info(&paths, &mut runtime);
+            if config.migrated_permissions {
+                runtime.view.notices.push(netenv::Notice {
+                    id: "permissions".into(),
+                    level: "info".into(),
+                    title: "The AI can now save files in your project".into(),
+                    text: "\"Ask before changes\" made Codex refuse every file change, so the app now uses \"Edit files in this project\". The AI still stays inside the project folder. Change it any time with the dropdown on the message box.".into(),
+                });
+            }
             let shared = Arc::new(Mutex::new(runtime));
             let web_data = paths.data.join("webview2");
             app.manage(AppState {
@@ -98,7 +113,15 @@ pub fn run() {
             commands::wipe_account,
             commands::export_diagnostics,
             commands::open_external,
-            commands::open_project_folder
+            commands::open_project_folder,
+            commands::install_tools,
+            commands::remove_tool,
+            commands::choose_folder,
+            commands::create_project,
+            commands::run_project,
+            commands::open_terminal,
+            commands::restart_ai,
+            commands::export_classroom_copy
         ])
         .build(tauri::generate_context!());
     match result {

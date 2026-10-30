@@ -20,6 +20,19 @@ pub struct Approval {
     pub params: Value,
     pub supported: bool,
 }
+/// A background task the student can watch: a tool download or a new project being set up.
+#[derive(Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Job {
+    pub id: String,
+    pub title: String,
+    /// "running", "done" or "failed".
+    pub state: String,
+    pub percent: Option<u8>,
+    pub message: String,
+    pub log: Vec<String>,
+    pub result: Option<String>,
+}
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -49,6 +62,15 @@ pub struct Snapshot {
     pub claude_info: Value,
     /// Which agent programs and shells were found beside the app.
     pub engines: Value,
+    /// Portable programming tools (Python, Rust, Git, PowerShell, Node.js) and their state.
+    pub tools: Value,
+    pub templates: Value,
+    pub jobs: Vec<Job>,
+    /// How the selected project runs ({run, tool, toolReady}), for the Run button.
+    pub project_info: Value,
+    /// Codex started before tools were added, so it cannot see them until it restarts.
+    pub tools_stale: bool,
+    pub projects_dir: String,
 }
 pub struct Runtime {
     pub view: Snapshot,
@@ -67,6 +89,8 @@ pub struct Runtime {
     /// Config changed from an event (usage); the event handler saves it.
     pub config_dirty: bool,
     pub seq: u64,
+    /// Tools fingerprint when the running Codex started.
+    pub agent_tools: String,
 }
 impl Runtime {
     pub fn new(config: Config, root: String) -> Self {
@@ -95,6 +119,12 @@ impl Runtime {
                 claude_binary: None,
                 claude_info: Value::Null,
                 engines: Value::Null,
+                tools: Value::Null,
+                templates: Value::Null,
+                jobs: vec![],
+                project_info: Value::Null,
+                tools_stale: false,
+                projects_dir: String::new(),
             },
             rpc: None,
             pending: Default::default(),
@@ -108,6 +138,23 @@ impl Runtime {
             login_gen: 0,
             config_dirty: false,
             seq: 0,
+            agent_tools: String::new(),
+        }
+    }
+    /// Creates or updates a job; at most the last 40 log lines are kept.
+    pub fn job(&mut self, id: &str, update: impl FnOnce(&mut Job)) {
+        let index = match self.view.jobs.iter().position(|j| j.id == id) {
+            Some(i) => i,
+            None => {
+                self.view.jobs.push(Job { id: id.into(), state: "running".into(), ..Default::default() });
+                self.view.jobs.len() - 1
+            }
+        };
+        let job = &mut self.view.jobs[index];
+        update(job);
+        if job.log.len() > 40 {
+            let extra = job.log.len() - 40;
+            job.log.drain(..extra);
         }
     }
     pub fn next_id(&mut self, prefix: &str) -> String {

@@ -38,7 +38,13 @@ sequenceDiagram
   startup checks (inside a ZIP, OneDrive, low disk, network share, long path, PAC proxy).
 * `portable_paths.rs` — portable folder layout, config with automatic repair of old or invalid values,
   per-account homes, atomic saves with retries, single-instance lock.
-* `commands.rs` — Tauri commands; each routes to the active provider.
+* `tools.rs` — portable programming tools: pinned downloads (curl.exe + SHA-256), install into
+  `tools/`, status, the shared tools environment, AI notes, Run (`uv run` / `cargo run` /
+  `npm run dev`) and Terminal consoles.
+* `scaffold.rs` — New project templates (Python tkinter/console via `uv init` + `uv sync`, Rust
+  console/egui via `cargo init` + first build, Node.js + Convex via npm, empty), plus AGENTS.md/CLAUDE.md.
+* `commands.rs` — Tauri commands; each routes to the active provider. Long tasks (tool installs,
+  project setup, classroom copy) run as background jobs shown in the snapshot.
 
 Usage meters: Codex sends `account/rateLimits/read` / `account/rateLimits/updated` (primary ≈ 5-hour,
 secondary ≈ weekly). Claude sends `rate_limit_event` with `five_hour` / `seven_day` utilization while it

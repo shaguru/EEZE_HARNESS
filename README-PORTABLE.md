@@ -6,7 +6,9 @@ your Desktop: no installer, no administrator rights, nothing added to Windows. I
 - **Codex** (the official OpenAI Codex program, `codex.exe`) with a **ChatGPT** account, or
 - **Claude** (the official Anthropic Claude Code program, `claude.exe`) with a **Claude** account.
 
-The official programs do the AI work, the sign-in and the safety checks. This app is the window around them.
+It can also set up **Python (with tkinter)**, **Rust**, **Git**, **PowerShell 7** and **Node.js**
+(for the **Convex** CLI) inside its own folder, so students can write and run real programs on
+computers where nothing can be installed.
 
 ## First launch (students)
 
@@ -14,53 +16,84 @@ The official programs do the AI work, the sign-in and the safety checks. This ap
    inside the ZIP; the app will warn you if you do.
 2. Open the new folder and double-click **RustPortableHarness.exe**.
 3. At the top, choose **Codex** or **Claude**, whichever you have an account for.
-4. Click **Choose folder** and pick your project folder. Make one folder per project, for example
-   `Desktop\my-game`. Don't pick your whole Desktop; the app asks you to confirm if you do.
+4. Click **＋ New project**, give it a name and choose a type (for example *Python window app*). The app
+   creates the folder, its Python or Rust environment, and starter code. Or click **Open existing
+   folder** to use a folder you already have.
 5. Click **Sign in**. Your browser opens the official sign-in page. Use **your own** account.
-6. Type in the message box and press **Enter** (Shift+Enter adds a new line).
+6. Type in the message box and press **Enter** (Shift+Enter adds a new line). Press **▶ Run** to try
+   your program.
 
-When the AI wants to edit a file or run a command, a **Permission needed** box explains what it wants to
-do. Choose **Approve once**, **Decline** or **Stop turn**.
+When the AI wants to do something that needs your permission, a **Permission needed** box explains what
+it wants. Choose **Approve once**, **Decline** or **Stop turn**.
+
+## New project
+
+| Type | What you get | Needs |
+| --- | --- | --- |
+| Python window app (tkinter) | `main.py` with a small window, its own `.venv` environment | Python |
+| Python program | A console program with its own `.venv` | Python |
+| Rust window app (egui) | A Rust window with a text box and a button, already built once | Rust |
+| Rust console app | A Rust console program | Rust |
+| Web app with a Convex database | A Node.js project with the Convex CLI (`npx convex dev` / `deploy`) | Node.js |
+| Empty folder | Just a folder | — |
+
+New projects go into the app's `projects` folder unless you choose another place. You can tick **Start a
+Git repository**. Every project gets `AGENTS.md` and `CLAUDE.md` notes so the AI knows how to run it.
+
+## Run and Terminal
+
+- **▶ Run** opens a console window and starts the project (`uv run main.py`, `cargo run` or
+  `npm run dev`). The window stays open so you can read errors and type answers.
+- **Terminal** opens a console in the project folder where `python`, `uv`, `cargo`, `git`, `node`,
+  `npm`, `npx` and `pwsh` all work.
+
+## Programming tools
+
+**Programming tools** (sidebar, or Settings) downloads each tool from its official website, checks it
+against its published checksum, and keeps it in the app's `tools` folder:
+
+| Tool | Download | On disk |
+| --- | --- | --- |
+| Python 3.14 with tkinter (through `uv`) | about 45 MB | about 110 MB |
+| Rust (no Visual Studio needed) | about 380 MB | about 850 MB |
+| Git (and Git Bash) | about 58 MB | about 360 MB |
+| PowerShell 7 | about 105 MB | about 250 MB |
+| Node.js with npm/npx (for Convex) | about 40 MB | about 120 MB |
+
+Their caches and settings (pip/uv cache, npm cache, Rust crates, a Git config) also stay in the app
+folder. **Remove** frees the space again. Teachers can use **Make a classroom copy…** to save a ZIP of the
+app with all tools but without their own sign-in, chats or projects, so students don't each download them.
 
 ## The main screen
 
 - **Codex | Claude** switch (top left): changes which AI you are talking to. Each keeps its own chats.
-- **Usage meter** (top right): the `5h` bar is the 5-hour limit and `Wk` is the weekly limit, for the
-  account in use. Green is fine, amber means getting close, red means nearly out. Click it to open
-  **Accounts & usage**.
-- **Message box**: drag its ⠿ handle and drop it on the **left**, **bottom** or **right**, or click the
-  three small layout buttons on it. Drag the line beside it to make it bigger or smaller (double-click
-  that line to reset). The dropdown on the message box sets what the AI may do:
-  - **Ask before changes** (default): reads and explains, and asks before every edit or command.
-  - **Edit files, ask for commands**: may edit files inside the project, and asks before commands.
+- **Usage meter** (top right): `5h` is the 5-hour limit and `Wk` the weekly limit of the account in use.
+  Click it for **Accounts & usage**.
+- **Message box**: drag its ⠿ handle onto the **left**, **bottom** or **right**, or click its three
+  layout buttons. Drag the line beside it to resize (double-click to reset). Its dropdown sets what the
+  AI may do:
+  - **Edit files in this project** (Codex) / **Edit files, ask for commands** (Claude): the default.
+    The AI can change files inside the project folder only.
+  - **Read only** (Codex) / **Ask before changes** (Claude): Codex can only explain and cannot save
+    files; Claude asks before every change.
   - **Work without asking**: no questions. Use only in a project you trust and can restore.
-- **Activity panel** (▤ button): shows the commands, file edits and tools the AI used. On small screens it
-  opens as a side drawer.
+- **Activity panel** (▤ button): the commands, file edits and tools the AI used.
 
 ## Accounts & usage
 
-Open it by clicking the usage meter or your account name.
+- **Add account** keeps several sign-ins on this computer (for example a school and a personal
+  account). Each has its own folder, chats and usage history.
+- **Use** switches account. **Sign in** / **Sign out** manage it. Codex also offers **Sign in with a code**.
+- Each account shows its **5-hour** and **weekly** usage and reset times.
 
-- **Add account** keeps several sign-ins on this computer, for example a school account and a personal
-  account. Each account has its own folder, chats and usage history.
-- **Use** switches to that account. **Sign in** / **Sign out** manage it. Codex also offers **Sign in with
-  a code** if the browser can't return to the app.
-- Each account shows its **5-hour** and **weekly** usage and when they reset. The account in use updates
-  while you chat. **Check all accounts** refreshes every ChatGPT account. Claude only reports usage
-  while it's answering, so other Claude accounts show their last known values.
-
-Each person should use their own account. The app doesn't share or rotate accounts automatically. Both
-OpenAI's and Anthropic's terms forbid sharing logins or using several accounts to get around usage
-limits, and doing so can get accounts suspended.
+Each person should use their own account. The app doesn't share or rotate accounts automatically; both
+OpenAI's and Anthropic's terms forbid sharing logins or using several accounts to get around limits.
 
 ## Settings
 
-**Settings** (⚙) keeps the everyday options: what the AI may do, message box position, Enter-to-send,
-theme, text size, showing the Activity panel, and auto-connect.
-
-**Advanced…** is a separate panel for teachers: proxy and school certificate, choosing `codex.exe` or
-`claude.exe`, the Codex Windows sandbox, reasoning summaries and service tier, full access, whether a
-project's own Claude settings may apply, diagnostics, and wiping an account.
+**Settings** (⚙) keeps everyday options. **Advanced…** is separate, for teachers: proxy and school
+certificate, choosing `codex.exe`/`claude.exe`, the Codex Windows sandbox, full access, project Claude
+settings, diagnostics and wiping an account.
 
 ## What's in the folder
 
@@ -70,30 +103,14 @@ RustPortableHarness/
   START-HERE.txt                     # the short version of this page
   codex.exe                          # official Codex CLI 0.163.0 x64
   claude.exe                         # official Claude Code 2.1+ (only in the Claude build)
-  tools/PortableGit/                 # optional: gives Claude a Bash shell for commands
-  data/                              # settings, sign-ins, chats, temp files (created on first launch)
-    codex-home/  claude-home/  accounts/  logs/  temp/  webview2/
-  projects/                          # empty convenience folder
+  tools/                             # Python, Rust, Git, PowerShell, Node.js (added by Programming tools)
+  projects/                          # new projects go here by default
+  data/                              # settings, sign-ins, chats, caches, temp files
 ```
 
-Everything the app writes stays inside this folder, including the AI programs' temp files. The folder can
-be moved or copied to a USB drive. Your projects stay where they are.
+Everything the app and its tools write stays inside this folder. **`data/` contains your sign-ins.**
+Sign out before you share the folder or leave a shared computer, and don't copy someone else's `data`.
 
-**`data/` contains your sign-ins.** Sign out before you share the folder or leave a shared computer, and
-don't copy someone else's `data` folder.
-
-If `claude.exe` isn't in the folder, the app also finds Claude Code installed for your Windows account
-(`%USERPROFILE%\.local\bin\claude.exe`), or you can choose it in **Settings → Advanced**.
-
-## If something goes wrong
-
-The app explains common problems in plain words and offers a button that helps. More detail:
-[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). Teachers preparing a classroom should read
-[docs/SCHOOL-DEPLOYMENT.md](docs/SCHOOL-DEPLOYMENT.md).
-
-The release doesn't need PowerShell, Node.js, Python, Rust or npm on the student computer. It does need
-the Microsoft Edge WebView2 Runtime (part of Windows 10/11), network access to the AI service, and an
-eligible account.
-
-See also [docs/SECURITY.md](docs/SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-[docs/PROTOCOL-VERSION.md](docs/PROTOCOL-VERSION.md).
+If something goes wrong, the app explains common problems with a button that helps. More detail:
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). Teachers: [docs/SCHOOL-DEPLOYMENT.md](docs/SCHOOL-DEPLOYMENT.md).
+See also [docs/SECURITY.md](docs/SECURITY.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

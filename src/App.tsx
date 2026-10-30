@@ -10,13 +10,14 @@ import {
   explain,
   prefsOf,
   presetOf,
+  presetsFor,
   type Approval,
   type Config,
   type Provider,
   type Snapshot,
 } from "./api";
-import { Modal, PatchViewer, UsageMeter, activityTitle, describeApproval } from "./ui";
-import { AccountsDialog, AdvancedDialog, SettingsDialog } from "./dialogs";
+import { JobCard, Modal, PatchViewer, UsageMeter, activityTitle, describeApproval } from "./ui";
+import { AccountsDialog, AdvancedDialog, NewProjectDialog, SettingsDialog, ToolsDialog } from "./dialogs";
 
 const tail = (p: string) => p.split(/[\\/]/).filter(Boolean).at(-1) || p;
 const pretty = (v: unknown) => JSON.stringify(v, null, 2);
@@ -59,7 +60,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
-  const [dialog, setDialog] = useState<null | "settings" | "advanced" | "accounts">(null);
+  const [dialog, setDialog] = useState<null | "settings" | "advanced" | "accounts" | "tools" | "project">(null);
   const [inspector, setInspector] = useState<"activity" | "changes">("activity");
   const [patch, setPatch] = useState<{ title: string; text: string } | null>(null);
   const [external, setExternal] = useState("");
@@ -371,8 +372,11 @@ export default function App() {
   const sidebar = (
     <aside className={`sidebar ${sideInGrid ? "" : "drawer drawer-left"}`}>
       <div className="eyebrow">PROJECTS</div>
+      <button className="send full" disabled={locked} onClick={() => setDialog("project")}>
+        ＋ New project
+      </button>
       <button className="outline full" disabled={locked} onClick={() => run("select_project")}>
-        📂 Open project folder
+        📂 Open existing folder
       </button>
       <div className="project-list">
         {config?.projects.map((p) => (
@@ -470,6 +474,9 @@ export default function App() {
         </button>
       )}
       <div className="sidebar-bottom">
+        <button className="ghost full" onClick={() => setDialog("tools")}>
+          Programming tools
+        </button>
         <button className="ghost full" onClick={() => setDialog("accounts")}>
           Accounts & usage
         </button>
@@ -565,9 +572,9 @@ export default function App() {
   const steps = [
     {
       done: !!config?.selectedProject,
-      label: config?.selectedProject ? `Project: ${tail(config.selectedProject)}` : "Choose a project folder",
-      button: "Choose folder",
-      action: () => run("select_project"),
+      label: config?.selectedProject ? `Project: ${tail(config.selectedProject)}` : "Create or choose a project",
+      button: "New project",
+      action: () => setDialog("project"),
       enabled: !locked,
     },
     {
@@ -659,6 +666,26 @@ export default function App() {
                 <h1>{current ? threadTitle(current) : s?.threadId ? "New chat" : "Start a working session"}</h1>
               </div>
               <div className="head-actions">
+                {config?.selectedProject && s?.projectInfo?.run && (
+                  <button
+                    className="send run-button"
+                    disabled={pending}
+                    title={`Runs "${s.projectInfo.run}" in a console window`}
+                    onClick={() => run("run_project")}
+                  >
+                    ▶ Run
+                  </button>
+                )}
+                {config?.selectedProject && (
+                  <button
+                    className="outline"
+                    disabled={pending}
+                    title="Open a console in this project with Python, Rust, Git and Node.js ready"
+                    onClick={() => run("open_terminal")}
+                  >
+                    Terminal
+                  </button>
+                )}
                 <select
                   aria-label="Model"
                   value={modelValue}
@@ -702,6 +729,17 @@ export default function App() {
                 </select>
               </div>
             </div>
+            {s?.toolsStale && (
+              <div className="notice info" role="status">
+                <div>
+                  <strong>New programming tools are ready</strong>
+                  <span>Restart Codex so it can use them. Your chat stays open.</span>
+                </div>
+                <button className="send" disabled={locked} onClick={() => run("restart_ai")}>
+                  Restart Codex
+                </button>
+              </div>
+            )}
             {notices.map((n) => (
               <div className={`notice ${n.level}`} role={n.level === "error" ? "alert" : "status"} key={n.id}>
                 <div>
@@ -866,9 +904,9 @@ export default function App() {
                   const p = PRESETS.find((x) => x.id === e.target.value);
                   if (p && config) savePrefs({ ...config, sandbox: p.sandbox, approvalPolicy: p.approval });
                 }}
-                title={PRESETS.find((p) => p.id === preset)?.hint || "Custom permissions (see Advanced settings)"}
+                title={presetsFor(provider).find((p) => p.id === preset)?.hint || "Custom permissions (see Advanced settings)"}
               >
-                {PRESETS.filter((p) => !("advanced" in p && p.advanced) || preset === p.id).map((p) => (
+                {presetsFor(provider).filter((p) => !("advanced" in p && p.advanced) || preset === p.id).map((p) => (
                   <option value={p.id} key={p.id}>
                     {p.label}
                   </option>
@@ -890,6 +928,18 @@ export default function App() {
                 ))}
               </span>
             </div>
+            {provider === "codex" && preset === "ask" && (
+              <div className="composer-banner" role="note">
+                <span>Read only: Codex can explain but cannot save any file.</span>
+                <button
+                  className="outline"
+                  disabled={locked}
+                  onClick={() => config && savePrefs({ ...config, sandbox: "workspace-write", approvalPolicy: "on-request" })}
+                >
+                  Let Codex edit this project
+                </button>
+              </div>
+            )}
             <textarea
               aria-label={`Message ${PROVIDER_NAME[provider]}`}
               value={text}
@@ -954,6 +1004,33 @@ export default function App() {
         <span title={config?.selectedProject || ""}>{config?.selectedProject || "No project selected"}</span>
         <span>{provider === "claude" ? s?.claudeBinary?.version || "Claude" : s?.binary?.version || "Codex"}</span>
       </footer>
+      {dialog === "tools" && s && <ToolsDialog s={s} run={run} onClose={() => setDialog(null)} />}
+      {dialog === "project" && s && (
+        <NewProjectDialog
+          s={s}
+          run={run}
+          onClose={() => setDialog(null)}
+          openTools={() => setDialog("tools")}
+          onCreated={async (path) => {
+            setDialog(null);
+            if (await run("reconnect_project", { path })) {
+              const snap = await call<Snapshot>("snapshot");
+              if (LIVE.includes(snap.lifecycle)) await run("open_thread", { id: null, more: false });
+            }
+          }}
+        />
+      )}
+      {!dialog && (s?.jobs || []).some((j) => j.state === "running") && (
+        <div className="job-tray">
+          {(s?.jobs || [])
+            .filter((j) => j.state === "running")
+            .map((j) => (
+              <button key={j.id} className="job-tray-item" onClick={() => setDialog(j.id === "project" ? "project" : "tools")}>
+                <JobCard job={j} compact />
+              </button>
+            ))}
+        </div>
+      )}
       {s?.warning && (
         <div className="notification-tray" role="status">
           <span>{s.warning}</span>
@@ -970,6 +1047,7 @@ export default function App() {
           onClose={() => setDialog(null)}
           openAccounts={() => setDialog("accounts")}
           openAdvanced={() => setDialog("advanced")}
+          openTools={() => setDialog("tools")}
           enterToSend={enterToSend}
           setEnterToSend={setEnterToSend}
         />

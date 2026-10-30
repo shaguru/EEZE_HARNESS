@@ -65,6 +65,26 @@ export type Approval = {
   supported: boolean;
 };
 export type Notice = { id: string; level: string; title: string; text: string };
+export type Job = {
+  id: string;
+  title: string;
+  state: "running" | "done" | "failed" | string;
+  percent: number | null;
+  message: string;
+  log: string[];
+  result: string | null;
+};
+export type ToolInfo = {
+  id: "python" | "rust" | "git" | "pwsh" | "node" | string;
+  name: string;
+  purpose: string;
+  downloadMb: number;
+  diskMb: number;
+  /** ready = in the app folder, system = installed on this PC, partial, missing */
+  state: string;
+  detail: string;
+};
+export type Template = { id: string; name: string; description: string; needs: string };
 export type BinaryInfo = { path: string; version: string; sha256: string };
 export type Snapshot = {
   lifecycle: string;
@@ -96,7 +116,15 @@ export type Snapshot = {
     gitBash?: string | null;
     gitBashBundled?: boolean;
   } | null;
+  tools: ToolInfo[] | null;
+  templates: Template[] | null;
+  jobs: Job[];
+  projectInfo: { run: string | null; tool?: string; toolReady?: boolean } | null;
+  toolsStale: boolean;
+  projectsDir: string;
 };
+export const toolUsable = (t?: ToolInfo | null) =>
+  !!t && (t.state === "ready" || t.state === "system" || (t.id === "rust" && t.state === "partial" && !/too long/.test(t.detail)));
 export const call = <T = void>(
   command: string,
   args?: Record<string, unknown>,
@@ -138,18 +166,18 @@ export const ACCOUNT_KIND: Record<Provider, string> = {
 /** Plain-language permission presets. Each maps to the sandbox + approval pair both agents understand. */
 export const PRESETS = [
   {
-    id: "ask",
-    label: "Ask before changes",
-    sandbox: "read-only",
-    approval: "on-request",
-    hint: "Reads your project and explains. Asks you before it edits a file or runs a command.",
-  },
-  {
     id: "edit",
     label: "Edit files, ask for commands",
     sandbox: "workspace-write",
     approval: "on-request",
     hint: "Can change files inside this project. Still asks before running commands.",
+  },
+  {
+    id: "ask",
+    label: "Ask before changes",
+    sandbox: "read-only",
+    approval: "on-request",
+    hint: "Reads your project and explains. Asks you before it edits a file or runs a command.",
   },
   {
     id: "auto",
@@ -167,6 +195,24 @@ export const PRESETS = [
     hint: "No limits, even outside the project. Only for teachers who know the risks.",
   },
 ] as const;
+/** The same presets worded for what each AI actually does. Codex 0.163 cannot ask before a file
+ *  change: in read-only mode it simply refuses to write. */
+const WORDING: Record<Provider, Record<string, { label: string; hint: string }>> = {
+  codex: {
+    edit: { label: "Edit files in this project", hint: "Codex can edit files and run commands inside the project folder. It asks before going outside it." },
+    ask: { label: "Read only (no changes)", hint: "Codex can read and explain your project but cannot save any file." },
+    auto: { label: "Work without asking", hint: "Codex never asks for permission. Only for projects you trust." },
+    full: { label: "Full access (advanced)", hint: "No limits, even outside the project. Only for teachers who know the risks." },
+  },
+  claude: {
+    edit: { label: "Edit files, ask for commands", hint: "Claude can change files in the project. It asks before running commands." },
+    ask: { label: "Ask before changes", hint: "Claude asks you before every file change or command." },
+    auto: { label: "Work without asking", hint: "Claude edits and runs commands without asking. Only for projects you trust." },
+    full: { label: "Full access (advanced)", hint: "No limits, even outside the project. Only for teachers who know the risks." },
+  },
+};
+export const presetsFor = (provider: Provider) =>
+  PRESETS.map((p) => ({ ...p, ...(WORDING[provider][p.id] || {}) }));
 export const presetOf = (c: Pick<Config, "sandbox" | "approvalPolicy">) =>
   PRESETS.find((p) => p.sandbox === c.sandbox && p.approval === c.approvalPolicy)
     ?.id ?? "custom";

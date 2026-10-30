@@ -1,5 +1,37 @@
 # Verification record
 
+## Programming tools, New project, Run/Terminal, write permission (2026-10-30)
+
+* `cargo test`: 43 passed (new: tools environment points only into the app folder, zip extraction
+  strips/filters and blocks `..`, AGENTS.md block replaced not duplicated, Run detection, project
+  name rules, empty template, old read-only default upgraded once, classroom copy leaves out
+  `data/` and `projects/`).
+* `node tests/ui.mjs`: 19 fixture checks (new: Codex read-only banner and one-click edit mode, Run and
+  Terminal, tools dialog with progress and job tray, full New project flow, Restart Codex prompt).
+* Each tool proven by hand from an isolated folder with no installed Python/Rust/Node/Git on PATH:
+  uv + Python 3.14.10 with Tk 9.0, `uv init --app --no-package` + `uv sync`, Node 26 with
+  `npm install convex` (CLI 1.48.0, `convex deploy --help`), PowerShell 7.6.9 (FullLanguage),
+  PortableGit 2.56 with bash 5.3, rustup 1.29.2 → Rust 1.99.1 `x86_64-pc-windows-gnu`.
+* Rust without Visual Studio: console apps link with the toolchain's bundled MinGW linker. Window apps
+  (eframe 0.37) also need `as.exe`/`dlltool.exe`/`ld.exe` + 5 DLLs (8 MB) from WinLibs 16.2.0
+  msvcrt r2; with them an egui window builds (53 s first build, 2 s rebuild) and opens. eframe with
+  `default-features = false, features = ["default_fonts","glow"]` and the slim dev profile cut the
+  build folder from 1.7 GB to under 400 MB. Linking worked with linker paths up to 258 characters.
+* **Real built app, end to end** (fresh staged folder, real downloads via curl.exe with SHA-256
+  checks): all tools installed into `tools/`; "Restart Codex" banner appeared and Codex's AGENTS.md
+  listed the tools; New project created a tkinter app (`.venv`, Git) in 2 s and ▶ Run opened its
+  window; a Rust egui app built in 59 s and ran; a Convex project installed convex 1.48.0; Terminal
+  opened the portable PowerShell; Claude was started with the tools note. Afterwards nothing new in
+  `~/.local/bin`, `~/.gitconfig`, `%APPDATA%\npm`, `~/.convex` or `HKCU\Software\Python`.
+* Found and fixed during testing: `uv python install` failed with "Access is denied" renaming its
+  freshly unpacked folder (antivirus) and also wrote a registry entry and a `~/.local/bin` shim, so
+  the app now unpacks the same pinned Python build itself with Windows' tar.exe straight into place
+  (`UV_PYTHON_DOWNLOADS=never`, `UV_PYTHON_INSTALL_REGISTRY=0`). "Get all" now also fetches app
+  copies of tools that are only installed on the teacher's PC, so classroom copies include them.
+* Not verified here: a real signed-in Codex/Claude turn using the tools, `npx convex dev` sign-in and
+  `convex deploy` against a real Convex account, Make a classroom copy end to end through the
+  native Save dialog (the ZIP writer is unit-tested), and a managed student PC.
+
 ## 0.1 + Claude, accounts, docking (2026-10-27)
 
 Environment: Windows 10 Pro x64, Rust 1.99.1 MSVC, Node 22.12.0, Codex CLI 0.163.0, Claude Code 2.1.308.

@@ -57,6 +57,9 @@ impl Rpc {
                 "approval_policy=\"on-request\"",
                 "-c",
                 "sandbox_mode=\"read-only\"",
+                // Pass the portable tools' settings (CARGO_HOME, UV_*, npm_config_*) to commands.
+                "-c",
+                "shell_environment_policy.inherit=\"all\"",
             ])
             .env("CODEX_HOME", home)
             .env(
@@ -73,9 +76,12 @@ impl Rpc {
             let tools = root.join("codex-path");
             if tools.is_dir() {
                 let mut paths = vec![tools];
-                paths.extend(std::env::split_paths(
-                    &std::env::var_os("PATH").unwrap_or_default(),
-                ));
+                let base = env
+                    .get("PATH")
+                    .map(std::ffi::OsString::from)
+                    .or_else(|| std::env::var_os("PATH"))
+                    .unwrap_or_default();
+                paths.extend(std::env::split_paths(&base));
                 if let Ok(path) = std::env::join_paths(paths) {
                     command.env("PATH", path);
                 }
@@ -206,7 +212,7 @@ impl Rpc {
         self.exited.load(Ordering::Acquire)
     }
     pub async fn handshake(&self) -> Result<Value, String> {
-        let result=self.request("initialize",json!({"clientInfo":{"name":"rust_portable_harness","title":"RustPortableHarness","version":"0.1.0"},"capabilities":{"experimentalApi":false}})).await?;
+        let result=self.request("initialize",json!({"clientInfo":{"name":"rust_portable_harness","title":"RustPortableHarness","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":false}})).await?;
         self.notify("initialized", json!({})).await?;
         Ok(result)
     }

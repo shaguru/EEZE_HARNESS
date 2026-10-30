@@ -5,12 +5,15 @@ import {
   PROVIDER_NAME,
   call,
   presetOf,
+  presetsFor,
+  toolUsable,
+  type ToolInfo,
   type Account,
   type Config,
   type Provider,
   type Snapshot,
 } from "./api";
-import { Modal, UsageBars } from "./ui";
+import { JobCard, Modal, UsageBars } from "./ui";
 
 type Run = (command: string, args?: Record<string, unknown>) => Promise<boolean>;
 const LIVE = ["Ready", "Busy", "Waiting for Approval"];
@@ -260,6 +263,7 @@ export function SettingsDialog({
   onClose,
   openAccounts,
   openAdvanced,
+  openTools,
   enterToSend,
   setEnterToSend,
 }: {
@@ -269,15 +273,16 @@ export function SettingsDialog({
   onClose: () => void;
   openAccounts: () => void;
   openAdvanced: () => void;
+  openTools: () => void;
   enterToSend: boolean;
   setEnterToSend: (v: boolean) => void;
 }) {
   const [prefs, setPrefs] = useState<Config>({ ...s.config });
   const preset = presetOf(prefs);
-  const choices = PRESETS.filter((p) => !("advanced" in p && p.advanced) || preset === p.id);
+  const choices = presetsFor(s.config.provider).filter((p) => !("advanced" in p && p.advanced) || preset === p.id);
   return (
     <Modal title="Settings" className="settings-dialog" onClose={onClose}>
-      <h3 className="settings-heading">What can the AI do?</h3>
+      <h3 className="settings-heading">What can {PROVIDER_NAME[s.config.provider]} do?</h3>
       <div className="preset-list" role="radiogroup" aria-label="What can the AI do">
         {choices.map((p) => (
           <label className={`preset ${preset === p.id ? "selected" : ""}`} key={p.id}>
@@ -352,6 +357,9 @@ export function SettingsDialog({
           <button className="outline" onClick={openAccounts}>
             Accounts & usage…
           </button>
+          <button className="outline" onClick={openTools}>
+            Programming tools…
+          </button>
           <button className="outline" onClick={openAdvanced}>
             Advanced…
           </button>
@@ -410,7 +418,7 @@ export function AdvancedDialog({
                 if (p) setPrefs({ ...prefs, sandbox: p.sandbox, approvalPolicy: p.approval });
               }}
             >
-              {PRESETS.map((p) => (
+              {presetsFor(s.config.provider).map((p) => (
                 <option value={p.id} key={p.id}>
                   {p.label}
                 </option>
@@ -580,6 +588,212 @@ export function AdvancedDialog({
           }}
         >
           Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const STATE_LABEL: Record<string, string> = {
+  ready: "Ready",
+  system: "On this PC",
+  partial: "Needs repair",
+  missing: "Not set up",
+};
+
+/** Download portable Python, Rust, Git, PowerShell and Node.js into the app folder. */
+export function ToolsDialog({ s, run, onClose }: { s: Snapshot; run: Run; onClose: () => void }) {
+  const tools = s.tools || [];
+  const job = s.jobs.find((j) => j.id === "tools");
+  const exportJob = s.jobs.find((j) => j.id === "export");
+  const busy = job?.state === "running";
+  // "On this PC" tools work here but are not in the app folder, so a classroom copy would lack them.
+  const missing = tools.filter((t) => t.state !== "ready");
+  const missingMb = missing.reduce((n, t) => n + t.downloadMb, 0);
+  const onlyHere = tools.filter((t) => t.state === "system");
+  return (
+    <Modal title="Programming tools" className="tools-dialog" onClose={onClose}>
+      <p className="hint">
+        Nothing is installed in Windows. Each tool is downloaded from its official website, checked
+        against its published checksum, and kept in this app's <code>tools</code> folder. The AI,
+        the Run button and Terminal all use them.
+      </p>
+      {job && <JobCard job={job} />}
+      <div className="tool-list">
+        {tools.map((t: ToolInfo) => (
+          <div className={`tool-card ${t.state}`} key={t.id}>
+            <div className="tool-info">
+              <strong>{t.name}</strong>
+              <small>{t.purpose}</small>
+              <small className={`tool-state ${t.state}`}>
+                {STATE_LABEL[t.state] || t.state}
+                {t.detail ? ` · ${t.detail}` : ""}
+              </small>
+            </div>
+            <div className="tool-actions">
+              {t.state === "ready" ? (
+                <button className="ghost" disabled={busy} onClick={() => run("remove_tool", { id: t.id })} title={`Frees about ${t.diskMb} MB`}>
+                  Remove
+                </button>
+              ) : (
+                <button className={t.state === "system" ? "ghost" : "outline"} disabled={busy} onClick={() => run("install_tools", { ids: [t.id] })}>
+                  {t.state === "partial" ? "Repair" : t.state === "system" ? "Get app copy" : "Get"} · {t.downloadMb} MB
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="dialog-actions spread">
+        <button className="outline" disabled={busy || exportJob?.state === "running"} onClick={() => run("export_classroom_copy")}>
+          Make a classroom copy…
+        </button>
+        <button className="send" disabled={busy || !missing.length} onClick={() => run("install_tools", { ids: missing.map((t) => t.id) })}>
+          {missing.length ? `Get all into the app (about ${missingMb} MB)` : "Everything is in the app folder"}
+        </button>
+      </div>
+      {exportJob && <JobCard job={exportJob} />}
+      {onlyHere.length > 0 && (
+        <p className="sensitive">
+          {onlyHere.map((t) => t.name.split(" (")[0]).join(", ")} {onlyHere.length > 1 ? "are" : "is"} installed on this
+          PC but not in the app folder, so a classroom copy would not include {onlyHere.length > 1 ? "them" : "it"}. Use
+          "Get app copy" first.
+        </p>
+      )}
+      <p className="hint">
+        Teachers: get the tools once, then use <strong>Make a classroom copy</strong> to save a ZIP of
+        this app with the tools but without your sign-in, chats or projects. Students extract it and
+        start straight away, without 30 separate downloads.
+      </p>
+    </Modal>
+  );
+}
+
+/** Create a project folder with its language environment ready to run. */
+export function NewProjectDialog({
+  s,
+  run,
+  onClose,
+  onCreated,
+  openTools,
+}: {
+  s: Snapshot;
+  run: Run;
+  onClose: () => void;
+  onCreated: (path: string) => void;
+  openTools: () => void;
+}) {
+  const templates = s.templates || [];
+  const tools = s.tools || [];
+  const tool = (id: string) => tools.find((t) => t.id === id);
+  const gitReady = toolUsable(tool("git"));
+  const [name, setName] = useState("");
+  const [template, setTemplate] = useState(templates[0]?.id || "python-tk");
+  const [parent, setParent] = useState<string | null>(null);
+  const [git, setGit] = useState(gitReady);
+  const [started, setStarted] = useState(false);
+  const job = s.jobs.find((j) => j.id === "project");
+  const toolsJob = s.jobs.find((j) => j.id === "tools");
+  const chosen = templates.find((t) => t.id === template);
+  const need = chosen?.needs ? tool(chosen.needs) : null;
+  const ready = !need || (template === "rust-gui" ? need.state === "ready" : toolUsable(need));
+  const working = started && job?.state === "running";
+  useEffect(() => {
+    if (started && job?.state === "done" && job.result) {
+      setStarted(false);
+      onCreated(job.result);
+    }
+  }, [started, job?.state, job?.result]);
+  return (
+    <Modal title="New project" className="project-dialog" onClose={onClose}>
+      <label className="field">
+        Project name
+        <input
+          autoFocus
+          className="text-input"
+          value={name}
+          maxLength={60}
+          placeholder="For example: my-game"
+          onChange={(e) => setName(e.target.value)}
+          disabled={working}
+        />
+      </label>
+      <h3 className="settings-heading">What kind of project?</h3>
+      <div className="template-list" role="radiogroup" aria-label="Project type">
+        {templates.map((t) => {
+          const needTool = t.needs ? tool(t.needs) : null;
+          const ok = !needTool || (t.id === "rust-gui" ? needTool.state === "ready" : toolUsable(needTool));
+          return (
+            <label className={`preset template ${template === t.id ? "selected" : ""}`} key={t.id}>
+              <input type="radio" name="template" checked={template === t.id} disabled={working} onChange={() => setTemplate(t.id)} />
+              <span>
+                <strong>{t.name}</strong>
+                <small>{t.description}</small>
+                {needTool && !ok && <small className="tool-state missing">Needs {needTool.name}, which is not set up yet</small>}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {!ready && need && (
+        <div className="sensitive need-tool">
+          <span>
+            This project type needs <strong>{need.name}</strong> (about {need.downloadMb} MB to download, once).
+          </span>
+          <span className="button-row">
+            <button className="send" disabled={toolsJob?.state === "running"} onClick={() => run("install_tools", { ids: [need.id] })}>
+              Get {need.name.split(" (")[0]}
+            </button>
+            <button className="ghost" onClick={openTools}>
+              All tools…
+            </button>
+          </span>
+        </div>
+      )}
+      {toolsJob?.state === "running" && <JobCard job={toolsJob} compact />}
+      <div className="settings-grid">
+        <label className="field">
+          Where
+          <span className="code-row">
+            <code className="path-text where">{parent || `${s.projectsDir} (inside the app)`}</code>
+            <button
+              className="ghost"
+              disabled={working}
+              onClick={async () => {
+                const folder = await call<string | null>("choose_folder").catch(() => null);
+                if (folder) setParent(folder);
+              }}
+            >
+              Change…
+            </button>
+          </span>
+        </label>
+      </div>
+      <label className="check">
+        <input type="checkbox" checked={git && gitReady} disabled={!gitReady || working} onChange={(e) => setGit(e.target.checked)} />
+        Start a Git repository {gitReady ? "" : "(get Git in Programming tools first)"}
+      </label>
+      {started && job && <JobCard job={job} />}
+      {job?.state === "failed" && job.result && (
+        <p className="hint">
+          The folder was created, but a setup step failed.{" "}
+          <button className="inline-link" onClick={() => onCreated(job.result!)}>
+            Open it anyway
+          </button>
+        </p>
+      )}
+      <div className="dialog-actions">
+        <button className="outline" onClick={onClose}>
+          Close
+        </button>
+        <button
+          className="send"
+          disabled={!name.trim() || !ready || working}
+          onClick={async () => {
+            if (await run("create_project", { name, template, parent, git: git && gitReady })) setStarted(true);
+          }}
+        >
+          {working ? "Setting up…" : "Create project"}
         </button>
       </div>
     </Modal>

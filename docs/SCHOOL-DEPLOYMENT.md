@@ -14,14 +14,23 @@ installer, administrator rights, registry changes, PATH entries or services. It 
      their own Windows account and the app finds it automatically.
    - `-PortableGit`: include an extracted *PortableGit* folder so Claude can run Bash commands on
      computers without Git. Without it, Claude uses PowerShell for commands.
-2. **Test the exact ZIP on a student account** on a real lab PC: unzip to the Desktop, open the app,
+2. **Prepare the programming tools once** (if students will write Python, Rust or Convex apps): open
+   the app, **Programming tools → Get all missing**, then **Make a classroom copy…**. The classroom ZIP
+   contains the tools but not your sign-in, chats or projects, so students don't each download about
+   600 MB. You can also pass the prepared folder to the build script: `-ToolsFrom <app>\tools`.
+3. **Test the exact ZIP on a student account** on a real lab PC: unzip to the Desktop, open the app,
    pick a project, sign in, send one message, approve one edit, and sign out.
-3. **Ask IT to allow** (if needed): the app folder or its programs in AppLocker/WDAC/antivirus, and these
-   sign-in and API sites through the proxy/filter: `chatgpt.com`, `auth.openai.com`, `api.openai.com`
-   (Codex); `claude.ai`, `claude.com`, `console.anthropic.com`, `api.anthropic.com` (Claude).
-4. **Explain accounts to students:** each student signs in with their own account. Don't share
+4. **Ask IT to allow** (if needed): the app folder or its programs in AppLocker/WDAC/antivirus, and these
+   sites through the proxy/filter: `chatgpt.com`, `auth.openai.com`, `api.openai.com` (Codex);
+   `claude.ai`, `claude.com`, `console.anthropic.com`, `api.anthropic.com` (Claude). For the
+   programming tools and their packages: `github.com` and `release-assets.githubusercontent.com`
+   (uv, Python, Git, PowerShell, Rust helpers), `static.rust-lang.org` and `crates.io` /
+   `index.crates.io` / `static.crates.io` (Rust), `pypi.org` and `files.pythonhosted.org`
+   (Python packages), `nodejs.org` and `registry.npmjs.org` (Node.js, npm), and `convex.dev` /
+   `*.convex.cloud` (Convex).
+5. **Explain accounts to students:** each student signs in with their own account. Don't share
    logins or set up shared "pool" accounts. Both providers forbid it and may suspend accounts.
-5. **Remind students to sign out** on shared computers (Accounts & usage → Sign out).
+6. **Remind students to sign out** on shared computers (Accounts & usage → Sign out).
 
 ## What can go wrong, and what happens
 
@@ -53,6 +62,13 @@ installer, administrator rights, registry changes, PATH entries or services. It 
 | `%TEMP%` unavailable or tightly limited | Nothing | AI temp files go to `data\temp` and are cleaned after 3 days. |
 | Claude tries to update itself | Nothing | Auto-update is turned off; update by replacing `claude.exe` in the ZIP. |
 | Small lab monitor or 125% scaling | Normal layout | Starts maximized on small screens, the Activity panel becomes a drawer, and the window can shrink to 760×500. |
+| Codex says it has no permission to write | The AI explains but changes nothing | Codex 0.163 cannot ask before a file change: in **Read only** it refuses. The default is now **Edit files in this project** (only inside the project folder); a banner offers it with one click. |
+| A tool download is blocked | "Could not download …" with the reason | Allow the sites above, or prepare a classroom copy with the tools already inside. Downloads use Windows' own `curl.exe` (Windows proxy and certificate store). Every file is checked against its official SHA-256; a changed file is deleted. |
+| Students can only write to the Desktop | Nothing; tools work | Python environments, the uv/pip/npm caches, Rust crates, Git's config and temp files all stay in the app folder. Nothing goes to `%USERPROFILE%`, `%APPDATA%` or the registry. |
+| Rust window app won't build | Error in the New project log | Rust uses the GNU toolchain with a small set of MinGW helpers (no Visual Studio). Keep the app folder path short (for example `Desktop\\Harness`). Crates that need a full C/C++ compiler, CMake or Visual Studio aren't supported. |
+| Rust build folders fill the disk | "Almost out of space" | Window apps use slimmed build settings (about 400 MB per project). Delete a project's `target` folder to free space; it rebuilds when run. |
+| PowerShell is blocked by policy | Terminal or AI commands fail | PowerShell 7 from Programming tools usually runs; if Group Policy blocks it too, Terminal falls back to Command Prompt. The app never changes execution policy beyond its own windows (RemoteSigned). |
+| `npx convex dev` asks to sign in | Questions in the Run window | That's normal the first time: sign in to Convex in the browser and answer in the console. For deploying without questions, put a deploy key in `.env.local` (`CONVEX_DEPLOY_KEY=…`) and run `npx convex deploy`. |
 | Wrong PC clock | Secure-connection or sign-in errors | Fix the clock; certificates and sign-in depend on it. |
 | Newer `claude.exe` changes its output format | Claude errors after an update | Keep the version you tested in the ZIP. The app needs Claude Code 2.1 or newer. Codex is pinned to 0.163.0. |
 

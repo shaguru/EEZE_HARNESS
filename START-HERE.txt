@@ -12,12 +12,15 @@ RustPortableHarness - quick start for students
       Codex  = uses a ChatGPT account
       Claude = uses a Claude account
 
-4. Click "Choose folder" and pick the folder of your project.
-   Make one folder per project (for example Desktop\my-game). Do not pick your whole Desktop.
+4. Click "+ New project", type a name and pick a type (for example "Python window app").
+   The app makes the folder, its Python or Rust environment and starter code.
+   (Or click "Open existing folder" for a project you already have.)
 
 5. Click "Sign in". Your web browser opens. Sign in with YOUR OWN account, then come back.
 
 6. Type your question in the message box and press Enter.
+   Press "Run" to start your program, or "Terminal" for a console where
+   python, cargo, git, node and npx work.
    The AI asks before it changes files or runs commands. Read each request, then
    click "Approve once" or "Decline".
 

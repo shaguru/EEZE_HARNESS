@@ -1,5 +1,7 @@
 use crate::{
-    claude, netenv,
+    claude, netenv, scaffold,
+    state::Job,
+    tools::{self, Layout},
     portable_paths::{
         broad_folder_warning, canonical_project, valid_account_id, Account, Config,
         PortablePaths, CLAUDE_DEFAULT, CLAUDE_EFFORTS, CODEX_DEFAULT,
@@ -94,12 +96,14 @@ fn git_bash(s: &AppState) -> Option<PathBuf> {
 }
 fn claude_env_for(s: &AppState, account: &Account) -> Result<netenv::ChildEnv, String> {
     let home = s.paths.account_home(account)?;
-    Ok(netenv::claude_env(
+    let mut env = netenv::claude_env(
         &config(s),
         &home,
         git_bash(s).as_deref(),
         Some(&s.paths.data.join("temp")),
-    ))
+    );
+    env.extend(&tools::env(&layout(&s.paths)));
+    Ok(env)
 }
 fn claude_env(s: &AppState) -> Result<netenv::ChildEnv, String> {
     claude_env_for(s, &config(s).active_account("claude"))
@@ -109,6 +113,24 @@ fn work_dir(s: &AppState) -> PathBuf {
     project(s)
         .map(PathBuf::from)
         .unwrap_or_else(|_| s.paths.data.join("temp"))
+}
+pub(crate) fn layout(paths: &PortablePaths) -> Layout {
+    Layout::new(&paths.root, &paths.data)
+}
+/// Proxy, certificate, temp folder and every portable tool: what Run, Terminal and setup jobs use.
+fn tool_env(s: &AppState) -> netenv::ChildEnv {
+    let mut env = netenv::network_env(&config(s), Some(&s.paths.data.join("temp")));
+    env.extend(&tools::env(&layout(&s.paths)));
+    env
+}
+/// Tool states, the selected project's Run command and whether Codex needs a restart to see new tools.
+pub(crate) fn refresh_env_info(paths: &PortablePaths, r: &mut Runtime) {
+    let l = layout(paths);
+    r.view.tools = tools::statuses(&l);
+    r.view.templates = scaffold::templates_json();
+    r.view.projects_dir = crate::portable_paths::display_path(&l.projects());
+    r.view.project_info = tools::project_info(&l, r.view.config.selected_project.as_deref());
+    r.view.tools_stale = r.rpc.is_some() && r.view.config.provider == "codex" && r.agent_tools != tools::fingerprint(&l);
 }
 pub(crate) fn engines(paths: &PortablePaths, c: &Config) -> Value {
     let codex = c
@@ -246,8 +268,9 @@ pub async fn connect(app: AppHandle, s: State<'_, AppState>) -> Result<(), Strin
     };
     if let Err(e) = &result {
         s.shared.lock().unwrap().fail(e.clone());
-        changed(&s, &app);
     }
+    refresh_env_info(&s.paths, &mut s.shared.lock().unwrap());
+    changed(&s, &app);
     save_if_dirty(&s);
     result
 }
@@ -315,7 +338,12 @@ async fn connect_inner(app: &AppHandle, s: &AppState) -> Result<(), String> {
         s.paths.data.join("temp")
     };
     let home = active_home(s, "codex")?;
-    let env = netenv::codex_env(&config(s), Some(&s.paths.data.join("temp")));
+    let mut env = netenv::codex_env(&config(s), Some(&s.paths.data.join("temp")));
+    let l = layout(&s.paths);
+    env.extend(&tools::env(&l));
+    // Codex reads $CODEX_HOME/AGENTS.md: tell it which portable tools exist here.
+    let _ = tools::write_notes_block(&home.join("AGENTS.md"), &tools::agent_notes(&l));
+    let fingerprint = tools::fingerprint(&l);
     let generation = {
         let mut r = s.shared.lock().unwrap();
         r.view.binary = Some(info.clone());
@@ -390,6 +418,8 @@ async fn connect_inner(app: &AppHandle, s: &AppState) -> Result<(), String> {
     {
         let mut r = s.shared.lock().unwrap();
         r.rpc = Some(rpc.clone());
+        r.agent_tools = fingerprint;
+        r.view.tools_stale = false;
         r.view.lifecycle = "Ready".into();
         r.view.thread_id = None;
         r.view.turn_id = None;
@@ -536,6 +566,7 @@ async fn set_project(s: &AppState, path: String) -> Result<(), String> {
         session.stop().await;
     }
     save(s)?;
+    refresh_env_info(&s.paths, &mut s.shared.lock().unwrap());
     if was_connected {
         let _ = refresh_threads_inner(s, false).await;
     }
@@ -867,8 +898,11 @@ async fn ensure_claude_session(app: &AppHandle, s: &AppState) -> Result<claude::
     let p = project(s)?;
     let account = c.active_account("claude");
     let mode = claude::permission_mode(&c);
+    let l = layout(&s.paths);
+    let notes = tools::agent_notes(&l);
     let signature = format!(
-        "{}|{:?}|{:?}|{}|{}|{}|{:?}|{}|{}",
+        "{}|{}|{:?}|{:?}|{}|{}|{}|{:?}|{}|{}",
+        tools::fingerprint(&l),
         account.id,
         c.claude_model,
         c.claude_effort,
@@ -908,6 +942,7 @@ async fn ensure_claude_session(app: &AppHandle, s: &AppState) -> Result<claude::
         effort: c.claude_effort.as_deref(),
         permission_mode: mode,
         project_settings: c.claude_project_settings,
+        system_note: Some(&notes),
     };
     let session =
         claude::Session::spawn(
@@ -1926,7 +1961,11 @@ async fn probe_codex(
         binary,
         &home,
         &s.paths.data.join("temp"),
-        &netenv::codex_env(&config(s), Some(&s.paths.data.join("temp"))),
+        &{
+            let mut env = netenv::codex_env(&config(s), Some(&s.paths.data.join("temp")));
+            env.extend(&tools::env(&layout(&s.paths)));
+            env
+        },
         handler,
     )
     .await?;
@@ -1946,6 +1985,311 @@ async fn probe_codex(
     .await;
     rpc.stop().await;
     result
+}
+
+// ------------------------------------------------------------------------------------------------
+// Programming tools, new projects, Run and Terminal
+
+fn job_report(shared: &Shared, app: &AppHandle, id: &'static str, prefix: String) -> tools::Report {
+    let (shared, app) = (shared.clone(), app.clone());
+    Arc::new(move |percent: Option<u8>, message: &str, line: Option<&str>| {
+        let mut r = shared.lock().unwrap();
+        r.job(id, |j| {
+            match (percent, line) {
+                (Some(p), _) => j.percent = Some(p),
+                (None, None) => j.percent = None,
+                _ => {}
+            }
+            j.message = if prefix.is_empty() { message.to_string() } else { format!("{prefix}: {message}") };
+            if let Some(l) = line {
+                j.log.push(l.chars().take(300).collect());
+            }
+        });
+        r.changed(&app);
+    })
+}
+fn job_running(r: &Runtime, id: &str) -> bool {
+    r.view.jobs.iter().any(|j| j.id == id && j.state == "running")
+}
+#[tauri::command]
+pub async fn install_tools(app: AppHandle, s: State<'_, AppState>, ids: Vec<String>) -> Result<(), String> {
+    let ids: Vec<&'static str> = tools::TOOLS.iter().map(|t| t.id).filter(|id| ids.iter().any(|x| x == id)).collect();
+    if ids.is_empty() {
+        return Err("Choose a tool to get.".into());
+    }
+    {
+        let mut r = s.shared.lock().unwrap();
+        if job_running(&r, "tools") {
+            return Err("A download is already running. Wait for it to finish.".into());
+        }
+        let names: Vec<&str> = ids.iter().filter_map(|id| tools::TOOLS.iter().find(|t| t.id == *id).map(|t| t.name)).collect();
+        r.job("tools", |j| {
+            *j = Job { id: "tools".into(), title: format!("Getting {}", names.join(", ")), state: "running".into(), message: "Starting…".into(), ..Default::default() };
+        });
+        r.changed(&app);
+    }
+    let (shared, paths) = (s.shared.clone(), s.paths.clone());
+    let net = netenv::network_env(&config(&s), Some(&s.paths.data.join("temp")));
+    tauri::async_runtime::spawn(async move {
+        let l = layout(&paths);
+        let mut failed = vec![];
+        for id in &ids {
+            let name = tools::TOOLS.iter().find(|t| t.id == *id).map(|t| t.name).unwrap_or(id);
+            let report = job_report(&shared, &app, "tools", name.to_string());
+            match tools::install(&l, id, &net, &report).await {
+                Ok(()) => report(Some(100), "ready", Some(&format!("{name} is ready."))),
+                Err(e) => {
+                    report(None, "failed", Some(&e));
+                    failed.push(format!("{name}: {e}"));
+                }
+            }
+        }
+        let mut r = shared.lock().unwrap();
+        r.job("tools", |j| {
+            j.percent = Some(100);
+            if failed.is_empty() {
+                j.state = "done".into();
+                j.message = "All set. New tools are ready to use.".into();
+            } else {
+                j.state = "failed".into();
+                j.message = failed.join("\n");
+            }
+        });
+        refresh_env_info(&paths, &mut r);
+        r.changed(&app);
+    });
+    Ok(())
+}
+#[tauri::command]
+pub async fn remove_tool(app: AppHandle, s: State<'_, AppState>, id: String) -> Result<(), String> {
+    let tool = tools::TOOLS.iter().find(|t| t.id == id).ok_or("Unknown tool")?;
+    let answer = rfd::AsyncMessageDialog::new()
+        .set_title("Remove this tool?")
+        .set_description(format!("Remove {} from the app folder to free about {} MB? Your projects are not touched; you can get the tool again later.", tool.name, tool.disk_mb))
+        .set_level(rfd::MessageLevel::Warning)
+        .set_buttons(rfd::MessageButtons::YesNo)
+        .show()
+        .await;
+    if answer != rfd::MessageDialogResult::Yes {
+        return Ok(());
+    }
+    if job_running(&s.shared.lock().unwrap(), "tools") {
+        return Err("Wait for the current download to finish.".into());
+    }
+    let l = layout(&s.paths);
+    let result = tokio::task::spawn_blocking(move || tools::remove(&l, &id)).await.map_err(|e| e.to_string())?;
+    refresh_env_info(&s.paths, &mut s.shared.lock().unwrap());
+    changed(&s, &app);
+    result
+}
+#[tauri::command]
+pub async fn choose_folder() -> Result<Option<String>, String> {
+    Ok(rfd::AsyncFileDialog::new()
+        .set_title("Where should the new project folder go?")
+        .pick_folder()
+        .await
+        .map(|f| crate::portable_paths::display_path(f.path())))
+}
+#[tauri::command]
+pub async fn create_project(
+    app: AppHandle,
+    s: State<'_, AppState>,
+    name: String,
+    template: String,
+    parent: Option<String>,
+    git: bool,
+) -> Result<(), String> {
+    let folder = scaffold::folder_name(&name)?;
+    if !scaffold::TEMPLATES.iter().any(|t| t.id == template) {
+        return Err("Choose a project type.".into());
+    }
+    let l = layout(&s.paths);
+    let parent = parent.filter(|p| !p.trim().is_empty()).map(PathBuf::from).unwrap_or_else(|| l.projects());
+    {
+        let mut r = s.shared.lock().unwrap();
+        if job_running(&r, "project") {
+            return Err("A project is already being set up.".into());
+        }
+        r.job("project", |j| {
+            *j = Job { id: "project".into(), title: format!("Creating {folder}"), state: "running".into(), percent: Some(0), message: "Starting…".into(), ..Default::default() };
+        });
+        r.changed(&app);
+    }
+    let env = tool_env(&s);
+    let (shared, paths) = (s.shared.clone(), s.paths.clone());
+    tauri::async_runtime::spawn(async move {
+        let report = job_report(&shared, &app, "project", String::new());
+        let result = scaffold::create(&l, &parent, &name, &template, git, &env, &report).await;
+        let dir = parent.join(&folder);
+        // Even if a setup step failed, the folder exists: keep it in the list so it can be opened.
+        let path = canonical_project(&dir.to_string_lossy()).ok();
+        let mut r = shared.lock().unwrap();
+        if let Some(path) = &path {
+            if !r.view.config.projects.contains(path) {
+                r.view.config.projects.push(path.clone());
+                let c = r.view.config.clone();
+                let _ = paths.save(&c);
+            }
+        }
+        r.job("project", |j| {
+            j.result = path.clone();
+            j.percent = Some(100);
+            match &result {
+                Ok(_) => {
+                    j.state = "done".into();
+                    j.message = "Your project is ready.".into();
+                }
+                Err(e) => {
+                    j.state = "failed".into();
+                    j.message = e.clone();
+                }
+            }
+        });
+        r.changed(&app);
+    });
+    Ok(())
+}
+#[tauri::command]
+pub async fn run_project(s: State<'_, AppState>) -> Result<(), String> {
+    let p = project(&s)?;
+    let l = layout(&s.paths);
+    let (label, command, tool) = tools::runner(Path::new(&p)).ok_or(
+        "The app doesn't know how to run this project yet. Ask the AI to add a main.py, Cargo.toml or package.json, or use Terminal.",
+    )?;
+    if !tools::usable(&l, tool) {
+        let name = tools::TOOLS.iter().find(|t| t.id == tool).map(|t| t.name).unwrap_or(tool);
+        return Err(format!("{name} is not set up yet. Open Programming tools to get it."));
+    }
+    let name = Path::new(&p).file_name().unwrap_or_default().to_string_lossy().to_string();
+    tools::open_console(&l, Path::new(&p), &format!("{name} - {label}"), Some(&command), &tool_env(&s))
+}
+#[tauri::command]
+pub async fn open_terminal(s: State<'_, AppState>) -> Result<(), String> {
+    let p = project(&s)?;
+    let l = layout(&s.paths);
+    let name = Path::new(&p).file_name().unwrap_or_default().to_string_lossy().to_string();
+    tools::open_console(&l, Path::new(&p), &name, None, &tool_env(&s))
+}
+/// Restarts the AI so it sees newly added tools, reopening the chat that was open.
+#[tauri::command]
+pub async fn restart_ai(app: AppHandle, s: State<'_, AppState>) -> Result<(), String> {
+    let thread = s.shared.lock().unwrap().view.thread_id.clone();
+    connect(app.clone(), s.clone()).await?;
+    if let Some(id) = thread {
+        let _ = open_thread(app, s, Some(id), false).await;
+    }
+    Ok(())
+}
+/// Saves a ZIP of this app folder with its tools but without anyone's sign-in, chats or settings,
+/// so a teacher can prepare the tools once and hand the same copy to every student.
+#[tauri::command]
+pub async fn export_classroom_copy(app: AppHandle, s: State<'_, AppState>) -> Result<(), String> {
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_title("Save a classroom copy (without your sign-in)")
+        .set_file_name("RustPortableHarness-classroom.zip")
+        .add_filter("ZIP file", &["zip"])
+        .save_file()
+        .await
+    else {
+        return Ok(());
+    };
+    let dest = file.path().to_path_buf();
+    let root = s.paths.root.clone();
+    if dest.starts_with(&root) {
+        return Err("Save the classroom copy outside the app folder (for example on the Desktop).".into());
+    }
+    {
+        let mut r = s.shared.lock().unwrap();
+        if job_running(&r, "export") {
+            return Err("A classroom copy is already being made.".into());
+        }
+        r.job("export", |j| {
+            *j = Job { id: "export".into(), title: "Making a classroom copy".into(), state: "running".into(), percent: Some(0), message: "Collecting files…".into(), ..Default::default() };
+        });
+        r.changed(&app);
+    }
+    let shared = s.shared.clone();
+    tauri::async_runtime::spawn(async move {
+        let report = job_report(&shared, &app, "export", String::new());
+        let d2 = dest.clone();
+        let result = tokio::task::spawn_blocking(move || write_classroom_zip(&root, &d2, &report)).await.map_err(|e| e.to_string()).and_then(|r| r);
+        let mut r = shared.lock().unwrap();
+        r.job("export", |j| {
+            j.percent = Some(100);
+            match &result {
+                Ok(()) => {
+                    j.state = "done".into();
+                    j.message = format!("Saved {}. Give students this ZIP; they extract it and sign in with their own accounts.", dest.display());
+                    j.result = Some(dest.to_string_lossy().to_string());
+                }
+                Err(e) => {
+                    j.state = "failed".into();
+                    j.message = e.clone();
+                    let _ = std::fs::remove_file(&dest);
+                }
+            }
+        });
+        r.changed(&app);
+    });
+    Ok(())
+}
+fn write_classroom_zip(root: &Path, dest: &Path, report: &tools::Report) -> Result<(), String> {
+    use std::io::Write;
+    let mut files = vec![];
+    let mut total = 0u64;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for e in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+            let path = e.path();
+            let rel = path.strip_prefix(root).map_err(|e| e.to_string())?.to_path_buf();
+            let top = rel.components().next().map(|c| c.as_os_str().to_string_lossy().to_lowercase()).unwrap_or_default();
+            // data/ holds sign-ins, chats and settings; projects/ holds the teacher's own work.
+            if top == "data" || top == "projects" {
+                continue;
+            }
+            let Ok(kind) = e.file_type() else { continue };
+            if kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
+                stack.push(path);
+            } else if !path.to_string_lossy().ends_with(".part") {
+                total += e.metadata().map(|m| m.len()).unwrap_or(0);
+                files.push((path, rel));
+            }
+        }
+    }
+    let out = std::fs::File::create(dest).map_err(|e| format!("Cannot create {}: {e}", dest.display()))?;
+    let mut zip = zip::ZipWriter::new(std::io::BufWriter::new(out));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .large_file(true);
+    for name in ["data/", "projects/"] {
+        zip.add_directory(format!("RustPortableHarness/{name}"), options).map_err(|e| e.to_string())?;
+    }
+    let mut done = 0u64;
+    let mut last = 0u8;
+    let mut buf = vec![0u8; 1 << 20];
+    for (path, rel) in files {
+        let name = format!("RustPortableHarness/{}", rel.to_string_lossy().replace('\\', "/"));
+        zip.start_file(name, options).map_err(|e| e.to_string())?;
+        let mut f = std::fs::File::open(&path).map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
+        loop {
+            let n = std::io::Read::read(&mut f, &mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            zip.write_all(&buf[..n]).map_err(|e| format!("Cannot write the ZIP ({e}). Is the disk full?"))?;
+            done += n as u64;
+        }
+        let pct = ((done * 100) / total.max(1)).min(99) as u8;
+        if pct != last {
+            last = pct;
+            report(Some(pct), &format!("Packing {} of {} MB…", done >> 20, total >> 20), None);
+        }
+    }
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -2036,6 +2380,7 @@ fn diagnostic_value(s: &AppState) -> Value {
         "claudeBinary": r.view.claude_binary,
         "claudeSession": r.view.claude_info,
         "engines": r.view.engines,
+        "tools": r.view.tools,
         "root": s.paths.root,
         "freeSpaceMB": free_mb,
         "accounts": c.accounts.iter().map(|a| json!({"id": a.id, "provider": a.provider, "signedIn": a.email.is_some(), "usageKnown": a.usage.is_some()})).collect::<Vec<_>>(),
@@ -2114,4 +2459,36 @@ pub async fn open_project_folder(s: State<'_, AppState>, path: String) -> Result
             .map_err(|e| format!("Could not open the project folder: {e}"))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn classroom_copy_leaves_out_sign_ins_and_projects() {
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path().join("app");
+        for (file, body) in [
+            ("RustPortableHarness.exe", "exe"),
+            ("tools/python/python.exe", "py"),
+            ("tools/node/node.exe", "node"),
+            ("data/codex-home/auth.json", "SECRET"),
+            ("data/config.json", "{}"),
+            ("projects/my-game/main.py", "teacher work"),
+            ("data/downloads/x.part", "partial"),
+        ] {
+            let p = root.join(file);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, body).unwrap();
+        }
+        let dest = t.path().join("classroom.zip");
+        let report: tools::Report = Arc::new(|_, _, _| {});
+        write_classroom_zip(&root, &dest, &report).unwrap();
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&dest).unwrap()).unwrap();
+        let names: Vec<String> = (0..zip.len()).map(|i| zip.by_index(i).unwrap().name().to_string()).collect();
+        assert!(names.contains(&"RustPortableHarness/tools/python/python.exe".to_string()));
+        assert!(names.contains(&"RustPortableHarness/RustPortableHarness.exe".to_string()));
+        assert!(names.contains(&"RustPortableHarness/data/".to_string()));
+        assert!(!names.iter().any(|n| n.contains("auth.json") || n.contains("config.json") || n.contains("main.py") || n.ends_with(".part")), "{names:?}");
+    }
 }

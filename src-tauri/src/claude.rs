@@ -62,6 +62,8 @@ pub struct Launch<'a> {
     pub effort: Option<&'a str>,
     pub permission_mode: &'a str,
     pub project_settings: bool,
+    /// Extra instructions (which portable tools exist on this computer).
+    pub system_note: Option<&'a str>,
 }
 impl Launch<'_> {
     pub fn args(&self) -> Vec<String> {
@@ -94,6 +96,9 @@ impl Launch<'_> {
         }
         if let Some(effort) = self.effort {
             args.extend(["--effort".into(), effort.into()]);
+        }
+        if let Some(note) = self.system_note.filter(|n| !n.trim().is_empty()) {
+            args.extend(["--append-system-prompt".into(), note.into()]);
         }
         let flag = if self.resume { "--resume" } else { "--session-id" };
         args.extend([flag.into(), self.session_id.into()]);
@@ -1279,7 +1284,7 @@ mod tests {
             find_url(&strip_ansi("If the browser didn't open, visit: \u{1b}]8;;https://claude.ai/x?a=1\u{7}https://claude.ai/x?a=1\u{1b}]8;;\u{7}\nPaste")),
             Some("https://claude.ai/x?a=1".into())
         );
-        let args = Launch { binary: Path::new("c"), cwd: Path::new("."), env: &ChildEnv::default(), session_id: "11111111-2222-4333-8444-555555555555", resume: true, model: Some("sonnet"), effort: None, permission_mode: "default", project_settings: false }.args();
+        let args = Launch { binary: Path::new("c"), cwd: Path::new("."), env: &ChildEnv::default(), session_id: "11111111-2222-4333-8444-555555555555", resume: true, model: Some("sonnet"), effort: None, permission_mode: "default", project_settings: false, system_note: Some("tools") }.args();
         assert!(args.windows(2).any(|w| w[0] == "--resume"));
         assert!(args.windows(2).any(|w| w == ["--setting-sources", "user"]));
     }
@@ -1303,7 +1308,7 @@ mod tests {
             handle(&mut r, &frame);
         });
         let id = uuid::Uuid::new_v4().to_string();
-        let launch = Launch { binary: &exe, cwd: cwd.path(), env: &env, session_id: &id, resume: false, model: None, effort: None, permission_mode: "default", project_settings: false };
+        let launch = Launch { binary: &exe, cwd: cwd.path(), env: &env, session_id: &id, resume: false, model: None, effort: None, permission_mode: "default", project_settings: false, system_note: None };
         let session = Session::spawn(launch, "sig".into(), handler).await.unwrap();
         shared.lock().unwrap().claude = Some(session.clone());
         session.user_message("hi").await.unwrap();

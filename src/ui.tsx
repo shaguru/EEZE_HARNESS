@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import {
   type Account,
   type Approval,
+  type Job,
   type Usage,
   percentLevel,
   resetText,
@@ -211,4 +212,31 @@ export function activityTitle(item: any): string {
     default:
       return item.type;
   }
+}
+
+/** Progress for a background job (tool download, project setup, classroom copy). */
+export function JobCard({ job, compact = false }: { job: Job; compact?: boolean }) {
+  const pct = job.percent ?? null;
+  return (
+    <div className={`job-card ${job.state}`} role="status" aria-live="polite">
+      <div className="job-head">
+        <strong>{job.title}</strong>
+        <span className="job-state">
+          {job.state === "running" ? (pct !== null ? `${pct}%` : "working…") : job.state === "done" ? "✓ done" : "failed"}
+        </span>
+      </div>
+      {job.state === "running" && (
+        <span className={`job-track ${pct === null ? "indeterminate" : ""}`}>
+          <i style={{ width: pct === null ? "35%" : `${pct}%` }} />
+        </span>
+      )}
+      <p className="job-message">{job.message}</p>
+      {!compact && job.log.length > 0 && (
+        <details open={job.state === "failed"}>
+          <summary className="hint">Details</summary>
+          <pre className="job-log">{job.log.slice(-12).join("\n")}</pre>
+        </details>
+      )}
+    </div>
+  );
 }

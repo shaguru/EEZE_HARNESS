@@ -80,6 +80,22 @@ const fixture = {
   claudeBinary: null,
   claudeInfo: null,
   engines: { codexFound: true, claudeFound: true, gitBash: null },
+  tools: [
+    { id: "python", name: "Python 3.14 (with tkinter)", purpose: "Python programs", downloadMb: 45, diskMb: 110, state: "missing", detail: "" },
+    { id: "rust", name: "Rust", purpose: "Rust apps", downloadMb: 380, diskMb: 850, state: "missing", detail: "" },
+    { id: "git", name: "Git", purpose: "Version control", downloadMb: 58, diskMb: 360, state: "ready", detail: "PortableGit 2.56" },
+    { id: "pwsh", name: "PowerShell 7", purpose: "Shell", downloadMb: 105, diskMb: 250, state: "system", detail: "C:\\Program Files\\PowerShell\\7\\pwsh.exe" },
+    { id: "node", name: "Node.js (npm, npx, Convex CLI)", purpose: "Convex", downloadMb: 40, diskMb: 120, state: "missing", detail: "" },
+  ],
+  templates: [
+    { id: "python-tk", name: "Python window app (tkinter)", description: "A small window.", needs: "python" },
+    { id: "rust", name: "Rust console app", description: "Console.", needs: "rust" },
+    { id: "empty", name: "Empty folder", description: "Just a folder.", needs: "" },
+  ],
+  jobs: [],
+  projectInfo: { run: "uv run main.py", tool: "python", toolReady: true },
+  toolsStale: false,
+  projectsDir: "C:\\Portable\\projects",
 };
 await page.addInitScript((fixture) => {
   let id = 0;
@@ -257,12 +273,87 @@ try {
   });
   await check("advanced options live in a separate panel", async () => {
     await page.getByRole("button", { name: "Settings", exact: true }).first().click();
-    await page.getByRole("heading", { name: "What can the AI do?" }).waitFor();
+    await page.getByRole("heading", { name: /What can (Codex|Claude) do?/ }).waitFor();
     if (await page.getByText("Proxy", { exact: true }).count()) throw Error("network options leaked into simple settings");
     await page.getByRole("button", { name: "Advanced…" }).click();
     await page.getByRole("heading", { name: "Advanced settings" }).waitFor();
     await page.getByText("Automatic: no proxy found").waitFor();
     await page.getByRole("button", { name: "Close dialog" }).click();
+  });
+  await check("Codex read-only explains itself and one click allows edits", async () => {
+    await update((f) => {
+      f.config.provider = "codex";
+      f.config.sandbox = "read-only";
+      f.config.approvalPolicy = "on-request";
+      f.error = null;
+    });
+    await page.getByText("Read only: Codex can explain but cannot save any file.").waitFor();
+    await clearCalls();
+    await page.getByRole("button", { name: "Let Codex edit this project" }).click();
+    const saved = (await calls("save_preferences")).at(-1);
+    if (saved?.args?.prefs?.sandbox !== "workspace-write") throw Error("edit mode not saved");
+    await update((f) => {
+      f.config.sandbox = "workspace-write";
+    });
+    await page.waitForFunction(() => document.querySelector(".preset-select option:checked")?.textContent === "Edit files in this project", null, { timeout: 5000 });
+    if (await page.getByText("Read only: Codex can explain").count()) throw Error("banner still shown in edit mode");
+  });
+  await check("Run and Terminal open consoles for the project", async () => {
+    await clearCalls();
+    await page.getByRole("button", { name: "▶ Run" }).click();
+    await page.getByRole("button", { name: "Terminal", exact: true }).click();
+    if (!(await calls("run_project")).length || !(await calls("open_terminal")).length) throw Error("run/terminal not called");
+  });
+  await check("Programming tools: get a tool and watch its progress", async () => {
+    await clearCalls();
+    await page.getByRole("button", { name: "Programming tools", exact: true }).click();
+    await page.getByRole("heading", { name: "Programming tools" }).waitFor();
+    await page.locator(".tool-card", { hasText: "Python 3.14" }).getByRole("button", { name: /Get · 45 MB/ }).click();
+    const call = (await calls("install_tools"))[0];
+    if (JSON.stringify(call?.args?.ids) !== '["python"]') throw Error("install_tools args wrong");
+    await update((f) => {
+      f.jobs = [{ id: "tools", title: "Getting Python", state: "running", percent: 42, message: "Python: Downloading uv: 6 of 14 MB", log: [], result: null }];
+    });
+    await page.locator(".tools-dialog .job-card").getByText("42%").waitFor();
+    await page.getByRole("button", { name: "Close dialog" }).click();
+    await page.locator(".job-tray .job-card").waitFor();
+    await update((f) => {
+      f.jobs = [];
+      f.tools[0].state = "ready";
+    });
+  });
+  await check("New project: pick a type, create, then open it", async () => {
+    await clearCalls();
+    await page.getByRole("button", { name: "＋ New project" }).click();
+    await page.getByRole("heading", { name: "New project" }).waitFor();
+    await page.getByPlaceholder("For example: my-game").fill("My Game");
+    await page.locator(".template", { hasText: "Rust console app" }).click();
+    await page.getByText("This project type needs").waitFor();
+    if (!(await page.getByRole("button", { name: "Create project" }).isDisabled())) throw Error("create allowed without Rust");
+    await page.locator(".template", { hasText: "Python window app" }).click();
+    await page.getByRole("button", { name: "Create project" }).click();
+    const created = (await calls("create_project"))[0];
+    if (created?.args?.name !== "My Game" || created?.args?.template !== "python-tk" || created?.args?.git !== true) throw Error(`create args: ${JSON.stringify(created?.args)}`);
+    await update((f) => {
+      f.jobs = [{ id: "project", title: "Creating My Game", state: "done", percent: 100, message: "Your project is ready.", log: [], result: "C:\\Portable\\projects\\My Game" }];
+    });
+    await page.waitForFunction(() => window.__testCalls.some((c) => c.command === "reconnect_project"), null, { timeout: 5000 });
+    const opened = (await calls("reconnect_project"))[0];
+    if (!opened?.args?.path?.endsWith("My Game")) throw Error("new project not opened");
+    await update((f) => {
+      f.jobs = [];
+    });
+  });
+  await check("Restart prompt appears when Codex predates new tools", async () => {
+    await clearCalls();
+    await update((f) => {
+      f.toolsStale = true;
+    });
+    await page.getByRole("button", { name: "Restart Codex" }).click();
+    if (!(await calls("restart_ai")).length) throw Error("restart_ai not called");
+    await update((f) => {
+      f.toolsStale = false;
+    });
   });
   await check("lab monitor size: no horizontal scroll, activity becomes a toggle", async () => {
     await page.setViewportSize({ width: 1093, height: 590 });

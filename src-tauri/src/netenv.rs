@@ -46,6 +46,50 @@ impl ChildEnv {
         self.set.retain(|(key, _)| key != k);
         self.set.push((k.into(), v.into()));
     }
+    pub fn get(&self, k: &str) -> Option<&str> {
+        self.set
+            .iter()
+            .rev()
+            .find(|(key, _)| key.eq_ignore_ascii_case(k))
+            .map(|(_, v)| v.as_str())
+    }
+    /// Puts folders in front of PATH (this environment's PATH if set, otherwise the app's).
+    pub fn prepend_path(&mut self, dirs: &[PathBuf]) {
+        if dirs.is_empty() {
+            return;
+        }
+        let base = self
+            .get("PATH")
+            .map(std::ffi::OsString::from)
+            .or_else(|| std::env::var_os("PATH"))
+            .unwrap_or_default();
+        let mut all: Vec<PathBuf> = dirs.iter().map(|d| PathBuf::from(display_path(d))).collect();
+        for p in std::env::split_paths(&base) {
+            if !all.iter().any(|a| a.as_os_str().eq_ignore_ascii_case(p.as_os_str())) {
+                all.push(p);
+            }
+        }
+        if let Ok(joined) = std::env::join_paths(all) {
+            self.set("PATH", joined.to_string_lossy().to_string());
+        }
+    }
+    /// Adds another environment on top of this one (its values win; PATH entries are merged).
+    pub fn extend(&mut self, other: &ChildEnv) {
+        for k in &other.remove {
+            if !self.remove.contains(k) {
+                self.remove.push(k.clone());
+            }
+        }
+        for (k, v) in &other.set {
+            if k.eq_ignore_ascii_case("PATH") {
+                let dirs: Vec<PathBuf> = std::env::split_paths(v).collect();
+                self.prepend_path(&dirs);
+            } else {
+                self.set(k, v.clone());
+            }
+            self.remove.retain(|r| !r.eq_ignore_ascii_case(k));
+        }
+    }
 }
 
 const PROXY_VARS: [&str; 6] = [
@@ -307,6 +351,7 @@ pub fn free_space(path: &Path) -> Option<u64> {
 /// A Git for Windows copy shipped inside the app folder (optional). Claude uses it for shell commands.
 pub fn bundled_git_bash(root: &Path) -> Option<PathBuf> {
     [
+        "tools/git/bin/bash.exe",
         "tools/PortableGit/bin/bash.exe",
         "PortableGit/bin/bash.exe",
         "tools/git/bin/bash.exe",

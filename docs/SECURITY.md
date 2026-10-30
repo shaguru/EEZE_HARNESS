@@ -26,6 +26,28 @@ an LLM API itself, scrape terminal output, grant access on its own, or expose an
 * Protocol frames and streamed content are bounded (8 MiB frames, capped item text and output).
 * Diagnostics never contain tokens, emails or chat contents.
 
+## Programming tools
+
+* Tools are downloaded only from their official release pages (astral-sh/uv,
+  astral-sh/python-build-standalone, static.rust-lang.org, brechtsanders/winlibs_mingw, git-for-windows,
+  PowerShell, nodejs.org) at pinned versions, and each file must match a pinned SHA-256 before it is used.
+  Archives are unpacked with path checks (no `..` or absolute paths). Python is unpacked by the app itself
+  (not `uv python install`), so nothing is written to the registry or the user profile.
+* All tool state lives in the app folder: `CARGO_HOME`, `RUSTUP_HOME`, `UV_*` (Python installs,
+  bin and cache), `PIP_CACHE_DIR`, `npm_config_cache`/`prefix`, and `GIT_CONFIG_GLOBAL`.
+  rustup runs with `--no-modify-path`.
+* The tools environment trusts the Windows certificate store (`UV_SYSTEM_CERTS`, `NODE_USE_SYSTEM_CA`;
+  curl and Git use Schannel) and sets `PSExecutionPolicyPreference=RemoteSigned` for the app's own
+  processes only. Group Policy settings still win.
+* Codex is started with `shell_environment_policy.inherit="all"` so its commands see these settings;
+  its default secret-name filter still applies. Both AIs get a short note listing the tools
+  (`$CODEX_HOME/AGENTS.md` managed block, Claude `--append-system-prompt`).
+* Run and Terminal open a normal console in the project folder. Project templates write only inside
+  the new project folder.
+* The default permission is now workspace-write + on-request ("Edit files in this project"), because
+  Codex 0.163 refuses every write in read-only mode instead of asking. Configs still on the old
+  read-only default are upgraded once, with a notice; a later read-only choice is kept.
+
 ## Claude specifics
 
 * The harness runs `claude.exe -p --input-format stream-json --output-format stream-json
