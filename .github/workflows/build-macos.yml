@@ -30,6 +30,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install dependencies
         run: npm ci
+      - name: Build web UI
+        run: npm run build
       - name: Unit tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Mac icons
