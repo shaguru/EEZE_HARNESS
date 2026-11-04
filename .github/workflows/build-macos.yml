@@ -30,15 +30,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install dependencies
         run: npm ci
-      - name: Build web UI
-        run: npm run build
-      - name: Unit tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Mac icons
         run: |
           sips -s format png src-tauri/icons/icon.ico --out "$RUNNER_TEMP/icon.png"
           sips -z 1024 1024 "$RUNNER_TEMP/icon.png"
           npx tauri icon "$RUNNER_TEMP/icon.png" -o src-tauri/icons
+      - name: Build web UI
+        run: npm run build
+      - name: Unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Build app
         run: npx tauri build --bundles app --config '{"bundle":{"active":true,"icon":["icons/icon.icns","icons/icon.png"]}}'
       - name: Official Codex 0.163.0 for Mac
