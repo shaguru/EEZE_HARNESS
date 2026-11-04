@@ -8647,6 +8647,10 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 
+====== Rust bzip2 0.5.2; license: MIT OR Apache-2.0; https://github.com/trifectatechfoundation/bzip2-rs ======
+
+====== Rust bzip2-sys 0.1.13+1.0.8; license: MIT/Apache-2.0; https://github.com/alexcrichton/bzip2-rs ======
+
 ====== Rust camino 1.2.6; license: MIT OR Apache-2.0; https://github.com/camino-rs/camino ======
 
 ====== Rust cargo-platform 0.1.9; license: MIT OR Apache-2.0; https://github.com/rust-lang/cargo ======
@@ -10815,6 +10819,8 @@ SOFTWARE.
 
 ====== Rust fdeflate 0.3.7; license: MIT OR Apache-2.0; https://github.com/image-rs/fdeflate ======
 
+====== Rust filetime 0.2.29; license: MIT/Apache-2.0; https://github.com/alexcrichton/filetime ======
+
 ====== Rust find-msvc-tools 0.1.15; license: MIT OR Apache-2.0; https://github.com/rust-lang/cc-rs ======
 
 ====== Rust flate2 1.1.10; license: MIT OR Apache-2.0; https://github.com/rust-lang/flate2-rs ======
@@ -12049,6 +12055,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ====== Rust pin-project-lite 0.2.17; license: Apache-2.0 OR MIT; https://github.com/taiki-e/pin-project-lite ======
 
+====== Rust pkg-config 0.3.34; license: MIT OR Apache-2.0; https://github.com/rust-lang/pkg-config-rs ======
+
 ====== Rust plist 1.10.3; license: MIT; https://github.com/ebarnard/rust-plist/ ======
 LICENCE
 Copyright (c) 2015 Edward Barnard
@@ -12193,7 +12201,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-====== Rust rust-portable-harness 0.1.0; license: see source;  ======
+====== Rust rust-portable-harness 0.3.0; license: see source;  ======
 
 ====== Rust rustc-hash 2.1.3; license: Apache-2.0 OR MIT; https://github.com/rust-lang/rustc-hash ======
 
@@ -12689,6 +12697,8 @@ PackageDownloadLocation: git+https://github.com/tauri-apps/tao.git
 PackageDownloadLocation: git+ssh://github.com/tauri-apps/tao.git
 Creator: Person: Daniel Thompson-Yvetot
 
+
+====== Rust tar 0.4.46; license: MIT OR Apache-2.0; https://github.com/composefs/tar-rs ======
 
 ====== Rust tauri 2.12.5; license: Apache-2.0 OR MIT; https://github.com/tauri-apps/tauri ======
 
@@ -13616,6 +13626,33 @@ SPDX-License-Identifier: Unicode-3.0
 Portions of ICU4X may have been adapted from ICU4C and/or ICU4J.
 ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation and others.
 
+
+====== Rust zip 2.6.1; license: MIT; https://github.com/zip-rs/zip2.git ======
+LICENSE
+The MIT License (MIT)
+
+Copyright (c) 2014 Mathijs van de Nes
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Some files in the "tests/data" subdirectory of this repository are under other
+licences; see files named LICENSE.*.txt for details.
 
 ====== Rust zlib-rs 0.6.8; license: Zlib; https://github.com/trifectatechfoundation/zlib-rs ======
 LICENSE

@@ -40,11 +40,17 @@ sequenceDiagram
   per-account homes, atomic saves with retries, single-instance lock.
 * `tools.rs` — portable programming tools: pinned downloads (curl.exe + SHA-256), install into
   `tools/`, status, the shared tools environment, AI notes, Run (`uv run` / `cargo run` /
-  `npm run dev`) and Terminal consoles.
+  `npm run dev`) and Terminal consoles. Also offline dictation: the UI records 16 kHz WAV (`src/dictation.ts`), `transcribe`
+  runs the sherpa-onnx runner with NVIDIA Parakeet TDT 0.6B v3. Archives are unpacked in-process
+  (`tar` + `bzip2`/`flate2` crates) because Windows 10 `tar.exe` hangs on `.tar.bz2`.
 * `scaffold.rs` — New project templates (Python tkinter/console via `uv init` + `uv sync`, Rust
   console/egui via `cargo init` + first build, Node.js + Convex via npm, empty), plus AGENTS.md/CLAUDE.md.
 * `commands.rs` — Tauri commands; each routes to the active provider. Long tasks (tool installs,
   project setup, classroom copy) run as background jobs shown in the snapshot.
+
+Omni mode = Codex `dangerFullAccess` sandbox (sent per turn as `sandboxPolicy`) + `never` approval;
+`allow_all` switches to it and answers the pending approvals. Mac builds come from
+`.github/workflows/build-macos.yml` (arm64 + x64), with the data folder beside the `.app`.
 
 Usage meters: Codex sends `account/rateLimits/read` / `account/rateLimits/updated` (primary ≈ 5-hour,
 secondary ≈ weekly). Claude sends `rate_limit_event` with `five_hour` / `seven_day` utilization while it

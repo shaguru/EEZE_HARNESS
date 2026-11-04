@@ -1835,3 +1835,93 @@ textarea:disabled {
 .need-tool .button-row {
   margin: 0;
 }
+
+.composer-banner.omni {
+  border-color: #7a3f3a;
+  background: #2f1d20;
+  color: #f2b8b0;
+}
+
+.switcher-anchor {
+  position: relative;
+}
+.chev {
+  color: #8ea6bd;
+  font-size: 10px;
+}
+.switcher {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 50;
+  width: 320px;
+  padding: 10px;
+  border: 1px solid #3b5369;
+  border-radius: 9px;
+  background: #151e28;
+  box-shadow: 0 20px 60px #000c;
+}
+.switcher .eyebrow {
+  margin: 2px 4px 8px;
+}
+.switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.switcher-item:hover:not(:disabled) {
+  background: #1c2835;
+}
+.switcher-item.on {
+  border-color: #3f7da6;
+  background: #13212e;
+}
+.switch-check {
+  color: #66c8ff;
+}
+.switch-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.switch-info strong {
+  font-size: 12px;
+}
+.switch-info small,
+.switch-usage small {
+  color: #8ea3b8;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.switch-usage .bad {
+  color: var(--bad);
+}
+
+.mic-button {
+  min-width: 40px;
+  padding: 6px 10px;
+  border: 1px solid #3a4858;
+  border-radius: 5px;
+  background: transparent;
+  color: #c6d1df;
+  font-size: 12px;
+}
+.mic-button:hover:not(:disabled) {
+  background: #1c2835;
+}
+.mic-button.recording {
+  border-color: #c4554d;
+  background: #3a1d20;
+  color: #ffb5ae;
+  font-variant-numeric: tabular-nums;
+}

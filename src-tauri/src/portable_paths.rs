@@ -6,6 +6,14 @@ use std::{
 };
 
 pub const CODEX_DEFAULT: &str = "codex-default";
+/// A program's file name on this OS ("codex.exe" on Windows, "codex" on macOS).
+pub fn exe(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
+}
 pub const CLAUDE_DEFAULT: &str = "claude-default";
 const CODEX_HOME_CONFIG: &str = "cli_auth_credentials_store = \"file\"\napproval_policy = \"on-request\"\nsandbox_mode = \"read-only\"\n[analytics]\nenabled = false\n";
 
@@ -19,11 +27,16 @@ pub struct PortablePaths {
 impl PortablePaths {
     pub fn discover() -> Result<Self, String> {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        Self::at(
-            exe.parent()
-                .ok_or("Executable has no parent folder")?
-                .to_path_buf(),
-        )
+        let mut dir = exe.parent().ok_or("Executable has no parent folder")?.to_path_buf();
+        // On macOS the program sits inside RustPortableHarness.app/Contents/MacOS: keep data beside the .app.
+        if cfg!(target_os = "macos") && dir.ends_with("Contents/MacOS") {
+            if let Some(app) = dir.parent().and_then(|c| c.parent()) {
+                if let Some(folder) = app.parent() {
+                    dir = folder.to_path_buf();
+                }
+            }
+        }
+        Self::at(dir)
     }
     pub fn at(root: PathBuf) -> Result<Self, String> {
         let data = root.join("data");
@@ -543,6 +556,7 @@ mod tests {
         assert!(p.lock_instance().is_err());
     }
     #[test]
+    #[cfg(windows)]
     fn unc_paths_keep_their_prefix() {
         assert_eq!(
             display_path(Path::new(r"\\?\UNC\server\share\proj")),
@@ -551,6 +565,7 @@ mod tests {
         assert_eq!(display_path(Path::new(r"\\?\C:\proj")), r"C:\proj");
     }
     #[test]
+    #[cfg(windows)]
     fn whole_drive_is_flagged() {
         assert!(broad_folder_warning(r"C:\").is_some());
         assert!(broad_folder_warning(r"C:\Users\someone\Desktop\my-game-7731").is_none());

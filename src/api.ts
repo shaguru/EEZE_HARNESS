@@ -188,11 +188,10 @@ export const PRESETS = [
   },
   {
     id: "full",
-    label: "Full access (advanced)",
+    label: "Omni: do everything, never ask",
     sandbox: "danger-full-access",
     approval: "never",
-    advanced: true,
-    hint: "No limits, even outside the project. Only for teachers who know the risks.",
+    hint: "Never stops to ask: edits, commands, installs and network. For sandboxed or practice computers while you teach.",
   },
 ] as const;
 /** The same presets worded for what each AI actually does. Codex 0.163 cannot ask before a file
@@ -202,13 +201,13 @@ const WORDING: Record<Provider, Record<string, { label: string; hint: string }>>
     edit: { label: "Edit files in this project", hint: "Codex can edit files and run commands inside the project folder. It asks before going outside it." },
     ask: { label: "Read only (no changes)", hint: "Codex can read and explain your project but cannot save any file." },
     auto: { label: "Work without asking", hint: "Codex never asks for permission. Only for projects you trust." },
-    full: { label: "Full access (advanced)", hint: "No limits, even outside the project. Only for teachers who know the risks." },
+    full: { label: "Omni: do everything, never ask", hint: "Never stops to ask: edits, commands, installs and network, even outside the project. For sandboxed or practice computers." },
   },
   claude: {
     edit: { label: "Edit files, ask for commands", hint: "Claude can change files in the project. It asks before running commands." },
     ask: { label: "Ask before changes", hint: "Claude asks you before every file change or command." },
     auto: { label: "Work without asking", hint: "Claude edits and runs commands without asking. Only for projects you trust." },
-    full: { label: "Full access (advanced)", hint: "No limits, even outside the project. Only for teachers who know the risks." },
+    full: { label: "Omni: do everything, never ask", hint: "Never stops to ask: edits, commands, installs and network, even outside the project. For sandboxed or practice computers." },
   },
 };
 export const presetsFor = (provider: Provider) =>

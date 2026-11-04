@@ -10,6 +10,9 @@ It can also set up **Python (with tkinter)**, **Rust**, **Git**, **PowerShell 7*
 (for the **Convex** CLI) inside its own folder, so students can write and run real programs on
 computers where nothing can be installed.
 
+There is a **Windows** build and a **Mac** build (Apple Silicon and Intel). Mac users: read
+**START-HERE-MAC.txt** first.
+
 ## First launch (students)
 
 1. **Unzip first.** Right-click the ZIP → **Extract All…** → choose your Desktop. Don't run the app from
@@ -24,7 +27,8 @@ computers where nothing can be installed.
    your program.
 
 When the AI wants to do something that needs your permission, a **Permission needed** box explains what
-it wants. Choose **Approve once**, **Decline** or **Stop turn**.
+it wants. Choose **Approve once**, **Decline** or **Stop turn**, or **Approve all & stop asking** to
+switch to **Omni** mode so it never asks again.
 
 ## New project
 
@@ -59,6 +63,7 @@ against its published checksum, and keeps it in the app's `tools` folder:
 | Git (and Git Bash) | about 58 MB | about 360 MB |
 | PowerShell 7 | about 105 MB | about 250 MB |
 | Node.js with npm/npx (for Convex) | about 40 MB | about 120 MB |
+| Dictation (NVIDIA Parakeet, offline speech to text) | about 490 MB | about 700 MB |
 
 Their caches and settings (pip/uv cache, npm cache, Rust crates, a Git config) also stay in the app
 folder. **Remove** frees the space again. Teachers can use **Make a classroom copy…** to save a ZIP of the
@@ -76,7 +81,14 @@ app with all tools but without their own sign-in, chats or projects, so students
     The AI can change files inside the project folder only.
   - **Read only** (Codex) / **Ask before changes** (Claude): Codex can only explain and cannot save
     files; Claude asks before every change.
-  - **Work without asking**: no questions. Use only in a project you trust and can restore.
+  - **Work without asking**: no questions inside the project. Use only in a project you trust.
+  - **Omni: do everything, never ask**: the AI never stops to ask, for edits, commands, installs and
+    network, even outside the project. Meant for sandboxed or practice computers. A red banner shows
+    while it's on.
+- **🎤 Microphone** (on the message box): click, speak, click again. Your words are typed into the
+  message box. Speech is turned into text **on this computer** (NVIDIA Parakeet), never sent anywhere.
+  The first click asks you to get **Dictation** in Programming tools (one 490 MB download). Tick
+  **Send automatically after dictation** in Settings to send straight away.
 - **Activity panel** (▤ button): the commands, file edits and tools the AI used.
 
 ## Accounts & usage
@@ -84,10 +96,14 @@ app with all tools but without their own sign-in, chats or projects, so students
 - **Add account** keeps several sign-ins on this computer (for example a school and a personal
   account). Each has its own folder, chats and usage history.
 - **Use** switches account. **Sign in** / **Sign out** manage it. Codex also offers **Sign in with a code**.
+- **Quick switch:** with more than one account, click your name (top right) to see every account with
+  its 5-hour and weekly use, and click another to switch. When a usage limit is reached, the notice
+  offers **Switch to …** your least-used other account.
 - Each account shows its **5-hour** and **weekly** usage and reset times.
 
-Each person should use their own account. The app doesn't share or rotate accounts automatically; both
-OpenAI's and Anthropic's terms forbid sharing logins or using several accounts to get around limits.
+One account is in use at a time. The app doesn't pool, combine or rotate accounts, and it doesn't share
+accounts across a team: both OpenAI's and Anthropic's terms forbid sharing logins or using several
+accounts to get around limits. Each person should sign in with their own account.
 
 ## Settings
 
@@ -103,10 +119,22 @@ RustPortableHarness/
   START-HERE.txt                     # the short version of this page
   codex.exe                          # official Codex CLI 0.163.0 x64
   claude.exe                         # official Claude Code 2.1+ (only in the Claude build)
-  tools/                             # Python, Rust, Git, PowerShell, Node.js (added by Programming tools)
+  tools/                             # Python, Rust, Git, PowerShell, Node.js, Dictation (added by Programming tools)
   projects/                          # new projects go here by default
   data/                              # settings, sign-ins, chats, caches, temp files
 ```
+
+On a Mac the folder holds `RustPortableHarness.app` and `codex` instead, plus `START-HERE-MAC.txt`.
+
+## Mac
+
+- Unzip, then run the one-line Terminal command in **START-HERE-MAC.txt** once, because the app is not
+  notarized by Apple. After that, double-click **RustPortableHarness.app**.
+- Settings, sign-ins and chats are kept in the `data` folder next to the app, as on Windows.
+- **Programming tools on a Mac:** only **Dictation** is downloaded by the app. Python, Rust, Git and
+  Node.js are used if they're already installed on the Mac (Homebrew, rustup, uv); the tools window shows
+  which were found.
+- Claude: install Claude Code yourself or put the `claude` program next to the app.
 
 Everything the app and its tools write stays inside this folder. **`data/` contains your sign-ins.**
 Sign out before you share the folder or leave a shared computer, and don't copy someone else's `data`.

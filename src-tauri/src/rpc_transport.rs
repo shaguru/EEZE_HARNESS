@@ -412,7 +412,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let handler: EventHandler = Arc::new(|_| {});
         let rpc = Rpc::spawn(
-            &root.join("codex.exe"),
+            &root.join(crate::portable_paths::exe("codex")),
             temp.path(),
             root,
             &crate::netenv::ChildEnv::default(),

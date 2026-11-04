@@ -17,6 +17,7 @@ import {
   type Snapshot,
 } from "./api";
 import { JobCard, Modal, PatchViewer, UsageMeter, activityTitle, describeApproval } from "./ui";
+import { Recorder } from "./dictation";
 import { AccountsDialog, AdvancedDialog, NewProjectDialog, SettingsDialog, ToolsDialog } from "./dialogs";
 
 const tail = (p: string) => p.split(/[\\/]/).filter(Boolean).at(-1) || p;
@@ -73,6 +74,10 @@ export default function App() {
   const [drawer, setDrawer] = useState<null | "sidebar" | "inspector">(null);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [enterToSend, setEnterToSend] = useStoredFlag("enterToSend", true);
+  const [dictationSend, setDictationSend] = useStoredFlag("dictationSend", false);
+  const [mic, setMic] = useState<"idle" | "recording" | "working">("idle");
+  const [micTime, setMicTime] = useState(0);
+  const recorder = useRef<Recorder | null>(null);
   // A message sent while a short action (new chat, connect) is finishing waits here instead of being dropped.
   const [queued, setQueued] = useState(false);
   const scroll = useRef<HTMLDivElement>(null);
@@ -140,6 +145,17 @@ export default function App() {
       (a) => a.id === (provider === "codex" ? config.activeCodexAccount : config.activeClaudeAccount),
     ) || null;
   const signedIn = !!s?.account?.account || (!connected && !!activeAccount?.email);
+  const [switcher, setSwitcher] = useState(false);
+  const sameKind = (config?.accounts || []).filter((a) => a.provider === provider);
+  /** The least-used other signed-in account of this AI, offered when a limit is hit. */
+  const spare = sameKind
+    .filter((a) => a.id !== activeAccount?.id && a.email && !a.usage?.limitReached)
+    .sort((a, b) => (a.usage?.primary?.usedPercent ?? 0) - (b.usage?.primary?.usedPercent ?? 0))[0];
+  async function switchTo(id: string) {
+    setSwitcher(false);
+    if (id === activeAccount?.id) return;
+    if (await run("switch_account", { id })) await run("connect");
+  }
 
   // Connect once at start (and the button stays available) so students go straight to chatting.
   useEffect(() => {
@@ -304,6 +320,52 @@ export default function App() {
     setFollow(true);
     if (await run("send_turn", { text: sent })) setText("");
   }
+  /** Microphone button: first click records, second click transcribes offline with Parakeet. */
+  async function toggleMic() {
+    const voiceReady = (s?.tools || []).some((t) => t.id === "voice" && t.state === "ready");
+    if (!voiceReady) {
+      setError("Dictation is not set up yet. In Programming tools, get Dictation (Parakeet) once (about 490 MB).");
+      setDialog("tools");
+      return;
+    }
+    if (mic === "idle") {
+      const r = new Recorder();
+      try {
+        await r.start();
+      } catch (e) {
+        setError(`The microphone could not start (${String(e)}). Check that a microphone is connected and allowed for this app in Windows Settings → Privacy → Microphone.`);
+        return;
+      }
+      recorder.current = r;
+      setMic("recording");
+      setMicTime(0);
+      return;
+    }
+    if (mic !== "recording" || !recorder.current) return;
+    setMic("working");
+    try {
+      const audio = await recorder.current.stop();
+      const said = await call<string>("transcribe", { audio });
+      if (said.trim()) {
+        setText((t) => (t.trim() ? `${t.trimEnd()} ${said.trim()}` : said.trim()));
+        if (dictationSend) setQueued(true);
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      recorder.current = null;
+      setMic("idle");
+    }
+  }
+  useEffect(() => {
+    if (mic !== "recording") return;
+    const t = setInterval(() => {
+      const secs = recorder.current?.seconds() ?? 0;
+      setMicTime(secs);
+      if (secs > 600) toggleMic();
+    }, 250);
+    return () => clearInterval(t);
+  }, [mic]);
   useEffect(() => {
     if (queued && !pending) send();
     if (queued && (busy || !connected)) setQueued(false);
@@ -622,10 +684,61 @@ export default function App() {
         </div>
         <div className="top-controls">
           <UsageMeter account={activeAccount} onOpen={() => setDialog("accounts")} />
-          <button className={`account-chip ${signedIn ? "" : "attention"}`} onClick={() => setDialog("accounts")} title="Accounts & usage">
-            <span className={`account-avatar ${provider}`}>{(activeAccount?.email || activeAccount?.label || "?")[0].toUpperCase()}</span>
-            <span className="account-chip-text">{signedIn ? activeAccount?.email || activeAccount?.label : "Sign in"}</span>
-          </button>
+          <span className="switcher-anchor">
+            <button
+              className={`account-chip ${signedIn ? "" : "attention"}`}
+              onClick={() => (sameKind.length > 1 ? setSwitcher((v) => !v) : setDialog("accounts"))}
+              title={sameKind.length > 1 ? "Switch account" : "Accounts & usage"}
+              aria-expanded={switcher}
+            >
+              <span className={`account-avatar ${provider}`}>{(activeAccount?.email || activeAccount?.label || "?")[0].toUpperCase()}</span>
+              <span className="account-chip-text">{signedIn ? activeAccount?.email || activeAccount?.label : "Sign in"}</span>
+              {sameKind.length > 1 && <span className="chev">▾</span>}
+            </button>
+            {switcher && (
+              <div className="switcher" role="menu" aria-label={`${PROVIDER_NAME[provider]} accounts`}>
+                <div className="eyebrow">{PROVIDER_NAME[provider].toUpperCase()} ACCOUNTS · ONE IN USE AT A TIME</div>
+                {sameKind.map((a) => {
+                  const p = a.usage?.primary?.usedPercent;
+                  const w = a.usage?.secondary?.usedPercent;
+                  return (
+                    <button
+                      key={a.id}
+                      role="menuitemradio"
+                      aria-checked={a.id === activeAccount?.id}
+                      className={`switcher-item ${a.id === activeAccount?.id ? "on" : ""}`}
+                      disabled={locked}
+                      onClick={() => switchTo(a.id)}
+                    >
+                      <span className="switch-check">{a.id === activeAccount?.id ? "●" : "○"}</span>
+                      <span className="switch-info">
+                        <strong>{a.label}</strong>
+                        <small>{a.email || "Not signed in"}</small>
+                      </span>
+                      <span className="switch-usage">
+                        {a.usage?.limitReached ? (
+                          <small className="bad">limit reached</small>
+                        ) : (
+                          <small>
+                            5h {p == null ? "–" : `${Math.round(p)}%`} · Wk {w == null ? "–" : `${Math.round(w)}%`}
+                          </small>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+                <button
+                  className="ghost full"
+                  onClick={() => {
+                    setSwitcher(false);
+                    setDialog("accounts");
+                  }}
+                >
+                  Manage accounts…
+                </button>
+              </div>
+            )}
+          </span>
           <span className={`pill ${connected ? "ok" : s?.lifecycle === "Failed" ? "bad" : "muted"}`}>
             <i />
             {LIFECYCLE_TEXT[s?.lifecycle || ""] || s?.lifecycle || "Loading"}
@@ -766,6 +879,11 @@ export default function App() {
                 {info.action === "signin" && (
                   <button className="send" onClick={() => setDialog("accounts")}>
                     Sign in
+                  </button>
+                )}
+                {info.action === "accounts" && spare && (
+                  <button className="send" disabled={locked} onClick={() => switchTo(spare.id)}>
+                    Switch to {spare.label}
                   </button>
                 )}
                 {info.action === "accounts" && (
@@ -928,6 +1046,11 @@ export default function App() {
                 ))}
               </span>
             </div>
+            {preset === "full" && (
+              <div className="composer-banner omni" role="note">
+                <span>Omni mode: {PROVIDER_NAME[provider]} won't stop to ask before anything.</span>
+              </div>
+            )}
             {provider === "codex" && preset === "ask" && (
               <div className="composer-banner" role="note">
                 <span>Read only: Codex can explain but cannot save any file.</span>
@@ -969,6 +1092,16 @@ export default function App() {
                     : "Ctrl+Enter to send"}
               </span>
               <div>
+                <button
+                  className={`mic-button ${mic}`}
+                  onClick={toggleMic}
+                  disabled={mic === "working"}
+                  aria-label={mic === "recording" ? "Stop dictation" : "Dictate with the microphone"}
+                  aria-pressed={mic === "recording"}
+                  title={mic === "recording" ? "Click to stop and turn speech into text" : "Dictate: click, speak, click again (offline Parakeet)"}
+                >
+                  {mic === "recording" ? `● ${Math.floor(micTime / 60)}:${String(Math.floor(micTime % 60)).padStart(2, "0")}` : mic === "working" ? "Writing…" : "🎤"}
+                </button>
                 <button className="ghost" disabled={!s?.turnId} onClick={() => run("interrupt")}>
                   ■ Stop
                 </button>
@@ -1050,6 +1183,8 @@ export default function App() {
           openTools={() => setDialog("tools")}
           enterToSend={enterToSend}
           setEnterToSend={setEnterToSend}
+          dictationSend={dictationSend}
+          setDictationSend={setDictationSend}
         />
       )}
       {dialog === "advanced" && s && (
@@ -1140,6 +1275,14 @@ export default function App() {
               </button>
               <button className="outline danger" disabled={!s?.turnId} onClick={() => run("interrupt")}>
                 Stop turn
+              </button>
+              <button
+                className="outline"
+                disabled={pending || !approval.supported}
+                title="Approves this and everything after it: switches to Omni mode (never ask)"
+                onClick={() => run("allow_all")}
+              >
+                Approve all & stop asking
               </button>
               <button className="send" disabled={pending || !approval.supported} onClick={() => decide(approval, "accept")}>
                 Approve once

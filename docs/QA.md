@@ -1,5 +1,21 @@
 # Verification record
 
+
+## 0.3.0: Omni mode, account switcher, dictation, Mac build
+
+* `cargo test`: 46 passed, 3 ignored (live tests). `tsc` clean. `node tests/ui.mjs`: 23 fixture checks
+  passed, including Omni option and banner, **Approve all & stop asking** → `allow_all`, account switcher →
+  `switch_account` + `connect`, and the mic opening Programming tools when Dictation is missing.
+* Real app, fresh ZIP extracted on G:, WebView2 with a fake microphone playing a TTS sentence: the 🎤 button
+  recorded, Parakeet transcribed offline, and the message box read "Hello class. Please create a Python
+  window app that shows a counter button". Choosing Omni showed the banner and saved; switching back saved
+  `workspace-write` + `on-request`.
+* The ignored `real_parakeet` test unpacked the real runner and model with the in-app bz2 extractor and
+  transcribed in 3.2 s.
+* Mac: built, unit-tested and smoke-launched only in GitHub Actions (`build-macos.yml`, arm64 + x64).
+  Not tried on a student Mac. A real signed-in Codex turn in Omni and a real multi-account switch were not
+  re-run in this round.
+
 ## Programming tools, New project, Run/Terminal, write permission (2026-10-30)
 
 * `cargo test`: 43 passed (new: tools environment points only into the app folder, zip extraction
