@@ -100,6 +100,8 @@ pub fn run() {
             commands::send_turn,
             commands::interrupt,
             commands::decide,
+            commands::allow_all,
+            commands::transcribe,
             commands::save_preferences,
             commands::set_ca_certificate,
             commands::choose_binary,

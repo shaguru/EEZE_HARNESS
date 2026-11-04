@@ -24,7 +24,7 @@ installer, administrator rights, registry changes, PATH entries or services. It 
    sites through the proxy/filter: `chatgpt.com`, `auth.openai.com`, `api.openai.com` (Codex);
    `claude.ai`, `claude.com`, `console.anthropic.com`, `api.anthropic.com` (Claude). For the
    programming tools and their packages: `github.com` and `release-assets.githubusercontent.com`
-   (uv, Python, Git, PowerShell, Rust helpers), `static.rust-lang.org` and `crates.io` /
+   (uv, Python, Git, PowerShell, Rust helpers, Dictation), `static.rust-lang.org` and `crates.io` /
    `index.crates.io` / `static.crates.io` (Rust), `pypi.org` and `files.pythonhosted.org`
    (Python packages), `nodejs.org` and `registry.npmjs.org` (Node.js, npm), and `convex.dev` /
    `*.convex.cloud` (Convex).

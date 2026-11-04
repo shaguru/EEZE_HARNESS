@@ -28,4 +28,9 @@ or Advanced). If that's not enough:
 | The AI can't find python/cargo/npm | After adding tools, press **Restart Codex** in the banner (Claude restarts by itself). |
 | ▶ Run does nothing useful | Run starts `uv run main.py`, `cargo run` or `npm run dev`. For other projects use **Terminal**. |
 | A Rust build fails with "linker" or "dlltool" | Get Rust again in Programming tools (it adds the Windows helpers), and keep the app folder path short. |
+| It keeps asking for permission | Choose **Omni: do everything, never ask** on the message box, or click **Approve all & stop asking**. Only on computers you can restore. |
+| 🎤 opens Programming tools | Dictation isn't set up yet. Get **Dictation (Parakeet)** once (about 490 MB). |
+| "The microphone could not start" | Plug in a microphone. Windows: Settings → Privacy → Microphone → allow desktop apps. Mac: System Settings → Privacy & Security → Microphone. |
+| Dictation types nothing | Speak a bit louder or closer; recordings under a second may come back empty. |
+| Mac: "app is damaged" or "can't be opened" | Run the command in START-HERE-MAC.txt once, then open the app again. |
 | An approval request looks unfamiliar | Decline it or press Stop turn. The app never answers approvals by itself unless you chose "Work without asking". |

@@ -266,6 +266,8 @@ export function SettingsDialog({
   openTools,
   enterToSend,
   setEnterToSend,
+  dictationSend,
+  setDictationSend,
 }: {
   s: Snapshot;
   locked: boolean;
@@ -275,6 +277,8 @@ export function SettingsDialog({
   openAdvanced: () => void;
   openTools: () => void;
   enterToSend: boolean;
+  dictationSend: boolean;
+  setDictationSend: (v: boolean) => void;
   setEnterToSend: (v: boolean) => void;
 }) {
   const [prefs, setPrefs] = useState<Config>({ ...s.config });
@@ -322,6 +326,10 @@ export function SettingsDialog({
       <label className="check">
         <input type="checkbox" checked={enterToSend} onChange={(e) => setEnterToSend(e.target.checked)} />
         Press Enter to send (Shift + Enter for a new line)
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={dictationSend} onChange={(e) => setDictationSend(e.target.checked)} />
+        Send automatically after dictation (🎤)
       </label>
       <h3 className="settings-heading">Appearance</h3>
       <div className="settings-grid">

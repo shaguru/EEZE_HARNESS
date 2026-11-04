@@ -85,6 +85,28 @@ const NODE: Download = Download {
     size: 41_157_375,
     file: "node-v26.13.0-win-x64.zip",
 };
+/// Offline speech-to-text: sherpa-onnx (Apache-2.0) running NVIDIA Parakeet TDT 0.6B v3 (CC-BY-4.0),
+/// English plus 24 European languages, on the CPU. Nothing is sent to the internet.
+#[cfg(windows)]
+const VOICE_RUNNER: Download = Download {
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-win-x64-shared-MT-Release-no-tts.tar.bz2",
+    sha256: "a644dfe2f7944afec9a356d2557c0452380f20ffcf2f8c704653cfce37558596",
+    size: 25_567_228,
+    file: "sherpa-onnx-v2.0.1-win-x64.tar.bz2",
+};
+#[cfg(not(windows))]
+const VOICE_RUNNER: Download = Download {
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-osx-universal2-shared-no-tts.tar.bz2",
+    sha256: "9021b6f33e8d1657fe5ae7a13e83fc948707f86b749dc7b775680db6451cc2b8",
+    size: 40_097_083,
+    file: "sherpa-onnx-v2.0.1-osx-universal2.tar.bz2",
+};
+const VOICE_MODEL: Download = Download {
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
+    sha256: "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf",
+    size: 487_170_055,
+    file: "parakeet-tdt-0.6b-v3-int8.tar.bz2",
+};
 pub const PYTHON_VERSION: &str = "3.14";
 const RUST_TOOLCHAIN: &str = "stable-x86_64-pc-windows-gnu";
 /// Paths near Windows' classic 260-character limit break the Rust linker and build scripts.
@@ -97,12 +119,13 @@ pub struct Tool {
     pub download_mb: u32,
     pub disk_mb: u32,
 }
-pub const TOOLS: [Tool; 5] = [
+pub const TOOLS: [Tool; 6] = [
     Tool { id: "python", name: "Python 3.14 (with tkinter)", purpose: "Python programs and tkinter window apps. Every project gets its own environment.", download_mb: 45, disk_mb: 110 },
     Tool { id: "rust", name: "Rust", purpose: "Rust console and window apps with cargo. No Visual Studio needed.", download_mb: 380, disk_mb: 850 },
     Tool { id: "git", name: "Git", purpose: "Version control, plus the Bash shell Claude uses to run commands.", download_mb: 58, disk_mb: 360 },
     Tool { id: "pwsh", name: "PowerShell 7", purpose: "A modern command shell for the AI and the Terminal button.", download_mb: 105, disk_mb: 250 },
     Tool { id: "node", name: "Node.js (npm, npx, Convex CLI)", purpose: "JavaScript projects and deploying to Convex with npx convex.", download_mb: 40, disk_mb: 120 },
+    Tool { id: "voice", name: "Dictation (Parakeet)", purpose: "Speak instead of typing: the microphone button turns speech into text on this computer, offline.", download_mb: 490, disk_mb: 700 },
 ];
 
 /// Where every tool, cache and setting lives inside the portable folder.
@@ -181,6 +204,15 @@ impl Layout {
     fn node(&self) -> PathBuf {
         self.node_dir().join("node.exe")
     }
+    fn voice_dir(&self) -> PathBuf {
+        self.tools().join("voice")
+    }
+    fn voice_runner(&self) -> PathBuf {
+        self.voice_dir().join("runner").join("bin").join(crate::portable_paths::exe("sherpa-onnx-offline"))
+    }
+    fn voice_model(&self) -> PathBuf {
+        self.voice_dir().join("model")
+    }
     fn npm_global(&self) -> PathBuf {
         self.data.join("npm-global")
     }
@@ -201,14 +233,38 @@ impl Layout {
     }
 }
 
+/// Folders where Mac users' own tools live; apps opened from Finder don't get them on PATH.
+fn mac_tool_dirs() -> Vec<PathBuf> {
+    if cfg!(not(target_os = "macos")) {
+        return vec![];
+    }
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    [PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin"), home.join(".cargo/bin"), home.join(".local/bin")]
+        .into_iter()
+        .filter(|d| d.is_dir())
+        .collect()
+}
 fn on_path(exe: &str) -> Option<PathBuf> {
-    std::env::split_paths(&std::env::var_os("PATH")?)
+    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .chain(mac_tool_dirs())
         .map(|d| d.join(exe))
         .find(|p| p.is_file())
 }
 
 /// "ready" (in the app folder), "system" (installed on this PC), "partial" or "missing".
 pub fn status(l: &Layout, id: &str) -> (&'static str, String) {
+    // On a Mac the app only downloads Dictation; other tools are the student's own installs.
+    if cfg!(not(windows)) && id != "voice" {
+        let program = match id {
+            "python" => "uv",
+            "rust" => "cargo",
+            other => other,
+        };
+        return match on_path(program) {
+            Some(p) => ("system", display_path(&p)),
+            None => ("missing", format!("install {program} on this Mac yourself")),
+        };
+    }
     match id {
         "python" => match (l.uv().is_file(), l.python_dir()) {
             (true, Some(dir)) => ("ready", format!("uv + {}", dir.file_name().unwrap_or_default().to_string_lossy())),
@@ -233,7 +289,7 @@ pub fn status(l: &Layout, id: &str) -> (&'static str, String) {
         "git" => {
             if l.git_exe().is_file() {
                 ("ready", "PortableGit 2.56".into())
-            } else if let Some(p) = on_path("git.exe") {
+            } else if let Some(p) = on_path(&crate::portable_paths::exe("git")) {
                 ("system", display_path(&p))
             } else {
                 ("missing", String::new())
@@ -242,7 +298,7 @@ pub fn status(l: &Layout, id: &str) -> (&'static str, String) {
         "pwsh" => {
             if l.pwsh().is_file() {
                 ("ready", "PowerShell 7.6".into())
-            } else if let Some(p) = on_path("pwsh.exe") {
+            } else if let Some(p) = on_path(&crate::portable_paths::exe("pwsh")) {
                 ("system", display_path(&p))
             } else {
                 ("missing", String::new())
@@ -251,8 +307,15 @@ pub fn status(l: &Layout, id: &str) -> (&'static str, String) {
         "node" => {
             if l.node().is_file() {
                 ("ready", "Node.js 26 LTS".into())
-            } else if let Some(p) = on_path("node.exe") {
+            } else if let Some(p) = on_path(&crate::portable_paths::exe("node")) {
                 ("system", display_path(&p))
+            } else {
+                ("missing", String::new())
+            }
+        }
+        "voice" => {
+            if l.voice_runner().is_file() && l.voice_model().join("tokens.txt").is_file() {
+                ("ready", "Parakeet TDT 0.6B v3, offline".into())
             } else {
                 ("missing", String::new())
             }
@@ -305,6 +368,7 @@ pub fn env(l: &Layout) -> ChildEnv {
     if l.pwsh().is_file() {
         dirs.push(l.pwsh_dir());
     }
+    dirs.extend(mac_tool_dirs());
     env.prepend_path(&dirs);
     let p = |p: PathBuf| display_path(&p);
     let cache = l.cache();
@@ -465,12 +529,12 @@ async fn download(l: &Layout, d: &Download, net: &ChildEnv, label: &str, report:
     }
     let part = dir.join(format!("{}.part", d.file));
     let _ = std::fs::remove_file(&part);
-    let curl = std::env::var_os("SystemRoot")
-        .map(|r| PathBuf::from(r).join("System32").join("curl.exe"))
-        .filter(|p| p.is_file())
-        .ok_or("Windows' curl.exe is missing, so the app cannot download tools. Ask IT, or copy a prepared tools folder from your teacher.")?;
+    let curl = system_program("curl").ok_or("The system's curl program is missing, so the app cannot download tools. Ask IT, or copy a prepared tools folder from your teacher.")?;
     let mut cmd = tokio::process::Command::new(curl);
-    cmd.args(["-fL", "--ssl-revoke-best-effort", "--retry", "2", "--connect-timeout", "30", "-sS", "-o"])
+    if cfg!(windows) {
+        cmd.arg("--ssl-revoke-best-effort");
+    }
+    cmd.args(["-fL", "--retry", "2", "--connect-timeout", "30", "-sS", "-o"])
         .arg(&part)
         .arg(d.url)
         .stdin(std::process::Stdio::null())
@@ -567,6 +631,40 @@ pub fn extract_zip(zip_path: &Path, dest: &Path, strip_top: bool, only: Option<(
     Ok(count)
 }
 
+/// Unpacks a .tar.gz or .tar.bz2 straight into `dest`, dropping the first `strip` folders. Done in
+/// the app because Windows 10's tar.exe hangs on .bz2 archives.
+pub fn extract_tar(archive: &Path, dest: &Path, strip: usize) -> Result<usize, String> {
+    let file = std::io::BufReader::new(std::fs::File::open(archive).map_err(|e| e.to_string())?);
+    let name = archive.to_string_lossy().to_lowercase();
+    let reader: Box<dyn Read> = if name.ends_with(".bz2") {
+        Box::new(bzip2::read::MultiBzDecoder::new(file))
+    } else {
+        Box::new(flate2::read::GzDecoder::new(file))
+    };
+    std::fs::create_dir_all(dest).map_err(|e| e.to_string())?;
+    let mut tar = tar::Archive::new(reader);
+    let mut count = 0;
+    for entry in tar.entries().map_err(|e| format!("Damaged archive: {e}"))? {
+        let mut entry = entry.map_err(|e| format!("Damaged archive: {e}"))?;
+        let path = entry.path().map_err(|e| e.to_string())?.into_owned();
+        // Only plain names: no absolute paths, drive letters or "..".
+        if path.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+            continue;
+        }
+        let rel: PathBuf = path.components().skip(strip).collect();
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        let out = dest.join(&rel);
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        entry.unpack(&out).map_err(|e| format!("Cannot write {}: {e}", out.display()))?;
+        count += 1;
+    }
+    Ok(count)
+}
+
 /// Runs a setup program hidden, passing its output lines to the progress log.
 pub async fn run_logged(program: &Path, args: &[&str], cwd: &Path, env: &ChildEnv, report: &Report, message: &str) -> Result<(), String> {
     let mut cmd = tokio::process::Command::new(program);
@@ -630,9 +728,22 @@ fn remove_inside(path: &Path, parent: &Path) -> Result<(), String> {
 }
 
 /// Downloads and sets up one tool inside the app folder.
+/// Programs that ship with the OS: System32 on Windows, /usr/bin on macOS.
+pub fn system_program(name: &str) -> Option<PathBuf> {
+    let path = if cfg!(windows) {
+        PathBuf::from(std::env::var_os("SystemRoot")?).join("System32").join(format!("{name}.exe"))
+    } else {
+        PathBuf::from("/usr/bin").join(name)
+    };
+    path.is_file().then_some(path)
+}
 pub async fn install(l: &Layout, id: &str, net: &ChildEnv, report: &Report) -> Result<(), String> {
     std::fs::create_dir_all(l.tools()).map_err(|e| format!("Cannot create the tools folder: {e}"))?;
     let tools = l.tools();
+    if cfg!(not(windows)) && id != "voice" {
+        let name = TOOLS.iter().find(|t| t.id == id).map(|t| t.name).unwrap_or(id);
+        return Err(format!("On a Mac, install {name} yourself (the app can download it on Windows only for now). The app will find it on your PATH."));
+    }
     let mut env = net.clone();
     env.extend(&self::env(l));
     match id {
@@ -645,12 +756,9 @@ pub async fn install(l: &Layout, id: &str, net: &ChildEnv, report: &Report) -> R
             remove_inside(&l.python_home(), &tools)?;
             let dir = l.python_home().join(PYTHON_DIR);
             std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create the Python folder: {e}"))?;
-            let tar = std::env::var_os("SystemRoot")
-                .map(|r| PathBuf::from(r).join("System32").join("tar.exe"))
-                .filter(|p| p.is_file())
-                .ok_or("Windows' tar.exe is missing, so Python cannot be unpacked. Ask IT, or use a classroom copy that already has the tools.")?;
-            let (a, d) = (display_path(&archive), display_path(&dir));
-            run_logged(&tar, &["-xzf", &a, "-C", &d, "--strip-components=1"], &l.data, net, report, &format!("Unpacking Python {PYTHON_VERSION}…")).await?;
+            report(None, &format!("Unpacking Python {PYTHON_VERSION}…"), None);
+            let (a, d) = (archive.clone(), dir.clone());
+            tokio::task::spawn_blocking(move || extract_tar(&a, &d, 1)).await.map_err(|e| e.to_string())??;
             let python = dir.join("python.exe");
             run_logged(&python, &["-c", "import tkinter, sys; print('Python', sys.version.split()[0], 'with tkinter', tkinter.TkVersion)"], &l.data, net, report, "Checking Python and tkinter…").await?;
             let _ = std::fs::remove_file(zip);
@@ -707,6 +815,18 @@ pub async fn install(l: &Layout, id: &str, net: &ChildEnv, report: &Report) -> R
             std::fs::create_dir_all(l.npm_global()).map_err(|e| e.to_string())?;
             let _ = std::fs::remove_file(zip);
         }
+        "voice" => {
+            let runner = download(l, &VOICE_RUNNER, net, "the speech engine", report).await?;
+            let model = download(l, &VOICE_MODEL, net, "the Parakeet model", report).await?;
+            remove_inside(&l.voice_dir(), &tools)?;
+            for (archive, dir, what) in [(&runner, l.voice_dir().join("runner"), "speech engine"), (&model, l.voice_model(), "Parakeet model (this takes a few minutes)")] {
+                report(None, &format!("Unpacking the {what}…"), None);
+                let (a, d) = (archive.clone(), dir.clone());
+                tokio::task::spawn_blocking(move || extract_tar(&a, &d, 1)).await.map_err(|e| e.to_string())??;
+            }
+            let _ = std::fs::remove_file(runner);
+            let _ = std::fs::remove_file(model);
+        }
         _ => return Err("Unknown tool".into()),
     }
     let (state, detail) = status(l, id);
@@ -728,8 +848,55 @@ pub fn remove(l: &Layout, id: &str) -> Result<(), String> {
         "git" => remove_inside(&l.git_dir(), &tools),
         "pwsh" => remove_inside(&l.pwsh_dir(), &tools),
         "node" => remove_inside(&l.node_dir(), &tools),
+        "voice" => remove_inside(&l.voice_dir(), &tools),
         _ => Err("Unknown tool".into()),
     }
+}
+
+/// Turns a 16 kHz mono WAV recording into text with the local Parakeet model.
+pub async fn transcribe(l: &Layout, wav: &[u8]) -> Result<String, String> {
+    if status(l, "voice").0 != "ready" {
+        return Err("Dictation is not set up yet. Open Programming tools and get Dictation (Parakeet).".into());
+    }
+    if wav.len() < 1000 {
+        return Err("The recording was empty. Check that the right microphone is allowed.".into());
+    }
+    let temp = l.data.join("temp");
+    std::fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
+    let file = temp.join(format!("dictation-{}.wav", std::process::id()));
+    std::fs::write(&file, wav).map_err(|e| e.to_string())?;
+    let m = l.voice_model();
+    let arg = |k: &str, f: &str| format!("--{k}={}", display_path(&m.join(f)));
+    let threads = std::thread::available_parallelism().map(|n| n.get().clamp(1, 8)).unwrap_or(4);
+    let mut cmd = tokio::process::Command::new(l.voice_runner());
+    cmd.args([
+        arg("encoder", "encoder.int8.onnx"),
+        arg("decoder", "decoder.int8.onnx"),
+        arg("joiner", "joiner.int8.onnx"),
+        arg("tokens", "tokens.txt"),
+        "--model-type=nemo_transducer".into(),
+        format!("--num-threads={threads}"),
+        display_path(&file),
+    ])
+    .stdin(std::process::Stdio::null())
+    .kill_on_drop(true);
+    hidden(&mut cmd);
+    let out = tokio::time::timeout(Duration::from_secs(180), cmd.output()).await;
+    let _ = std::fs::remove_file(&file);
+    let out = out
+        .map_err(|_| "Transcription took too long.".to_string())?
+        .map_err(|e| format!("Cannot start the speech engine: {e}"))?;
+    let text = format!("{}\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    parse_transcript(&text).ok_or_else(|| format!("The speech engine gave no text. {}", text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("")))
+}
+/// sherpa-onnx prints one JSON object per file, e.g. {"lang": "", "text": " Hello class.", ...}.
+pub fn parse_transcript(output: &str) -> Option<String> {
+    output
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix('{').map(|_| l.trim()))
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter_map(|v| v["text"].as_str().map(|t| t.trim().to_string()))
+        .last()
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -776,7 +943,7 @@ fn console_shell(l: &Layout) -> (PathBuf, bool) {
     if l.pwsh().is_file() {
         return (l.pwsh(), true);
     }
-    if let Some(p) = on_path("pwsh.exe") {
+    if let Some(p) = on_path(&crate::portable_paths::exe("pwsh")) {
         return (p, true);
     }
     let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
@@ -794,6 +961,24 @@ fn plain(text: &str) -> String {
 /// Opens a normal console window in the project folder with every tool on PATH, optionally running
 /// a command (the window stays open so students can read the output and type input).
 pub fn open_console(l: &Layout, project: &Path, title: &str, command: Option<&str>, env: &ChildEnv) -> Result<(), String> {
+    if cfg!(target_os = "macos") {
+        // Terminal.app starts its own login shell, so pass the tools' settings inline.
+        let mut script = format!("cd '{}'", project.to_string_lossy().replace('\'', "'\\''"));
+        for (k, v) in &env.set {
+            if k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                script.push_str(&format!("; export {k}='{}'", v.replace('\'', "'\\''")));
+            }
+        }
+        if let Some(c) = command {
+            script.push_str(&format!("; {c}"));
+        }
+        let apple = format!("tell application \"Terminal\" to do script \"{}\"", script.replace('\\', "\\\\").replace('"', "\\\""));
+        return std::process::Command::new("osascript")
+            .args(["-e", &apple, "-e", "tell application \"Terminal\" to activate"])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Could not open Terminal: {e}"));
+    }
     let (shell, powershell) = console_shell(l);
     let title = plain(title);
     let mut tools: Vec<&str> = vec![];
@@ -836,6 +1021,38 @@ pub fn open_console(l: &Layout, project: &Path, title: &str, command: Option<&st
 mod tests {
     use super::*;
     #[test]
+    fn tar_bz2_and_gz_unpack_with_strip_and_safety() {
+        let t = tempfile::tempdir().unwrap();
+        let mut raw = tar::Builder::new(Vec::new());
+        for (name, body) in [("pkg/bin/run.exe", "x"), ("pkg/model/tokens.txt", "a b")] {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(body.len() as u64);
+            h.set_mode(0o644);
+            h.set_cksum();
+            raw.append_data(&mut h, name, body.as_bytes()).unwrap();
+        }
+        let raw = raw.into_inner().unwrap();
+        let bz = t.path().join("a.tar.bz2");
+        let mut enc = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::default());
+        enc.write_all(&raw).unwrap();
+        std::fs::write(&bz, enc.finish().unwrap()).unwrap();
+        let gz = t.path().join("a.tar.gz");
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(&raw).unwrap();
+        std::fs::write(&gz, enc.finish().unwrap()).unwrap();
+        for (archive, out) in [(&bz, "o1"), (&gz, "o2")] {
+            let dest = t.path().join(out);
+            assert_eq!(extract_tar(archive, &dest, 1).unwrap(), 2);
+            assert!(dest.join("bin/run.exe").is_file() && dest.join("model/tokens.txt").is_file());
+        }
+    }
+    #[test]
+    fn transcript_is_read_from_sherpa_output() {
+        let out = "OfflineRecognizerConfig(...)\nC:/x.wav\n{\"lang\": \"\", \"emotion\": \"\", \"text\": \" Hello class, open the project.\", \"timestamps\": []}\n----\nElapsed seconds: 1.2";
+        assert_eq!(parse_transcript(out).as_deref(), Some("Hello class, open the project."));
+        assert!(parse_transcript("no json here").is_none());
+    }
+    #[test]
     fn notes_block_is_replaced_not_duplicated() {
         let t = tempfile::tempdir().unwrap();
         let f = t.path().join("AGENTS.md");
@@ -870,7 +1087,9 @@ mod tests {
         assert!(get("UV_PYTHON_BIN_DIR").contains("tools"));
         assert!(get("PATH").starts_with(&display_path(&l.uv_dir())));
         assert!(l.gitconfig().is_file());
-        assert_eq!(status(&l, "python").0, "partial");
+        if cfg!(windows) {
+            assert_eq!(status(&l, "python").0, "partial");
+        }
     }
     #[test]
     fn zip_extraction_strips_top_folder_and_filters() {
@@ -892,5 +1111,30 @@ mod tests {
         let only = t.path().join("only");
         assert_eq!(extract_zip(&zpath, &only, false, Some(("top/bin", &["as.exe"]))).unwrap(), 1);
         assert!(only.join("as.exe").is_file());
+    }
+}
+
+/// Real engine + model: DICT_DIR must hold runner.tar.bz2, model.tar.bz2 and hello.wav.
+/// Run with: DICT_DIR=<folder> cargo test real_parakeet -- --ignored --nocapture
+#[cfg(test)]
+mod real_voice {
+    use super::*;
+    #[tokio::test]
+    #[ignore = "needs DICT_DIR with the sherpa-onnx runner, Parakeet model and a WAV"]
+    async fn real_parakeet() {
+        let dir = PathBuf::from(std::env::var("DICT_DIR").unwrap());
+        let root = dir.join("app");
+        let l = Layout::new(&root, &root.join("data"));
+        if status(&l, "voice").0 != "ready" {
+            let t = std::time::Instant::now();
+            extract_tar(&dir.join("runner.tar.bz2"), &l.voice_dir().join("runner"), 1).unwrap();
+            extract_tar(&dir.join("model.tar.bz2"), &l.voice_model(), 1).unwrap();
+            println!("unpacked in {:?}", t.elapsed());
+        }
+        assert_eq!(status(&l, "voice").0, "ready");
+        let t = std::time::Instant::now();
+        let text = transcribe(&l, &std::fs::read(dir.join("hello.wav")).unwrap()).await.unwrap();
+        println!("transcribed in {:?}: {text}", t.elapsed());
+        assert!(text.to_lowercase().contains("python"), "{text}");
     }
 }

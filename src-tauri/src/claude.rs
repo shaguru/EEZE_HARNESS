@@ -317,7 +317,8 @@ pub fn find_binary(root: &Path, config: &Config) -> Option<PathBuf> {
             return Some(p);
         }
     }
-    [root.join("claude.exe"), root.join("claude").join("claude.exe")]
+    let name = crate::portable_paths::exe("claude");
+    [root.join(&name), root.join("claude").join(&name)]
         .into_iter()
         .find(|p| p.is_file())
         .or_else(crate::netenv::user_claude_install)

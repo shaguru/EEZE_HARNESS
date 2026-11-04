@@ -1,0 +1,29 @@
+RustPortableHarness for Mac - quick start
+=========================================
+
+1. Double-click the downloaded ZIP. A folder named RustPortableHarness appears.
+   Move it to your Desktop or Documents.
+
+2. macOS blocks apps from the internet that are not from the App Store or signed by Apple.
+   This app is free and unsigned, so do this ONCE:
+     - Open Terminal (Applications > Utilities > Terminal).
+     - Type:  xattr -dr com.apple.quarantine
+       then a space, then drag the RustPortableHarness FOLDER into the Terminal window,
+       and press Return.
+   (Or: double-click the app, click Done, then open System Settings > Privacy & Security
+    and click "Open Anyway". You may need to do this for codex too.)
+
+3. Double-click RustPortableHarness.app.
+
+4. Pick Codex (ChatGPT account) or Claude (Claude account) at the top, click "+ New project"
+   or "Open existing folder", click "Sign in" with YOUR OWN account, and type your question.
+
+Notes for Mac
+-------------
+- Settings, sign-ins and chats are saved in the "data" folder next to the app. Keep the app
+  and the data folder together.
+- Programming tools (Python, Rust, Git, PowerShell, Node.js) are downloaded by the app on
+  Windows only for now. On a Mac, install the ones you need yourself; the app finds them.
+  Dictation (the microphone button) works on Mac: get "Dictation (Parakeet)" in
+  Programming tools, then allow the microphone when macOS asks.
+- Claude: install Claude Code for your Mac (https://claude.com/claude-code); the app finds it.

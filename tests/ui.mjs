@@ -86,6 +86,7 @@ const fixture = {
     { id: "git", name: "Git", purpose: "Version control", downloadMb: 58, diskMb: 360, state: "ready", detail: "PortableGit 2.56" },
     { id: "pwsh", name: "PowerShell 7", purpose: "Shell", downloadMb: 105, diskMb: 250, state: "system", detail: "C:\\Program Files\\PowerShell\\7\\pwsh.exe" },
     { id: "node", name: "Node.js (npm, npx, Convex CLI)", purpose: "Convex", downloadMb: 40, diskMb: 120, state: "missing", detail: "" },
+    { id: "voice", name: "Dictation (Parakeet)", purpose: "Speak instead of typing", downloadMb: 490, diskMb: 700, state: "missing", detail: "" },
   ],
   templates: [
     { id: "python-tk", name: "Python window app (tkinter)", description: "A small window.", needs: "python" },
@@ -354,6 +355,53 @@ try {
     await update((f) => {
       f.toolsStale = false;
     });
+  });
+  await check("Omni mode is a simple choice and shows a banner", async () => {
+    await clearCalls();
+    const select = page.locator(".preset-select");
+    const labels = await select.locator("option").allTextContents();
+    if (!labels.some((l) => l.startsWith("Omni"))) throw Error("Omni option missing: " + labels.join(" | "));
+    await update((f) => {
+      f.config.sandbox = "danger-full-access";
+      f.config.approvalPolicy = "never";
+    });
+    await page.getByText("Omni mode: Codex won't stop to ask").waitFor();
+    await update((f) => {
+      f.config.sandbox = "read-only";
+      f.config.approvalPolicy = "on-request";
+    });
+  });
+  await check("Approval box offers Approve all & stop asking", async () => {
+    await clearCalls();
+    await update((f) => {
+      f.approvals = [{ key: "9", id: 9, method: "item/commandExecution/requestApproval", params: { command: "echo hi", cwd: "C:\Test Project" }, supported: true }];
+    });
+    await page.getByRole("button", { name: "Approve all & stop asking" }).click();
+    if (!(await calls("allow_all")).length) throw Error("allow_all not called");
+    await update((f) => {
+      f.approvals = [];
+    });
+  });
+  await check("Account switcher: one click picks another account", async () => {
+    await clearCalls();
+    await update((f) => {
+      f.config.accounts.push({ id: "codex-2", provider: "codex", label: "Second ChatGPT", email: "second@school.edu", plan: "plus", usage: { primary: { usedPercent: 5, windowMins: 300, resetsAt: null }, secondary: null }, usageAt: null });
+    });
+    await page.locator(".account-chip").click();
+    await page.getByRole("menu", { name: "Codex accounts" }).waitFor();
+    await page.getByRole("menuitemradio", { name: /Second ChatGPT/ }).click();
+    const sw = (await calls("switch_account"))[0];
+    if (sw?.args?.id !== "codex-2") throw Error("switch_account args wrong");
+    await page.waitForFunction(() => window.__testCalls.some((c) => c.command === "connect"), null, { timeout: 3000 });
+    await update((f) => {
+      f.config.accounts = f.config.accounts.filter((a) => a.id !== "codex-2");
+    });
+  });
+  await check("Microphone opens Programming tools when Dictation is not set up", async () => {
+    await page.getByRole("button", { name: "Dictate with the microphone" }).click();
+    await page.getByRole("heading", { name: "Programming tools" }).waitFor();
+    await page.getByText("Dictation (Parakeet)").first().waitFor();
+    await page.keyboard.press("Escape");
   });
   await check("lab monitor size: no horizontal scroll, activity becomes a toggle", async () => {
     await page.setViewportSize({ width: 1093, height: 590 });

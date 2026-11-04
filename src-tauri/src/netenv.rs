@@ -404,8 +404,8 @@ pub fn startup_notices(root: &Path, config: &Config) -> Vec<Notice> {
         notices.push(Notice::new("zip", "error", "Unzip the app first",
             "The app is running from inside the ZIP file, so it cannot keep your settings or find its helper programs. Close it, right-click the ZIP → Extract All…, choose your Desktop, then open RustPortableHarness.exe from the new folder.".into()));
     }
-    let codex = root.join("codex.exe").is_file();
-    let claude = root.join("claude.exe").is_file()
+    let codex = root.join(crate::portable_paths::exe("codex")).is_file();
+    let claude = root.join(crate::portable_paths::exe("claude")).is_file()
         || config
             .claude_binary_path
             .as_deref()
@@ -481,8 +481,8 @@ pub fn clean_temp(dir: &Path, max_age_days: u64) {
 
 /// The official native installer puts Claude here for the current user, without admin rights.
 pub fn user_claude_install() -> Option<PathBuf> {
-    let home = std::env::var_os("USERPROFILE")?;
-    let path = PathBuf::from(home).join(".local/bin/claude.exe");
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    let path = PathBuf::from(home).join(".local/bin").join(crate::portable_paths::exe("claude"));
     path.is_file().then_some(path)
 }
 
@@ -522,6 +522,7 @@ mod tests {
         assert!(env.remove.iter().any(|k| k == "HTTPS_PROXY"));
     }
     #[test]
+    #[cfg(windows)]
     fn zip_temp_folder_is_detected() {
         let temp = std::env::var("TEMP").unwrap_or_else(|_| r"C:\Users\x\AppData\Local\Temp".into());
         let root = PathBuf::from(format!(r"{temp}\Temp1_RustPortableHarness.zip\RustPortableHarness"));

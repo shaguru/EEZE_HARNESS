@@ -70,7 +70,7 @@ fn binary(s: &AppState) -> PathBuf {
         .binary_path
         .as_ref()
         .map(PathBuf::from)
-        .unwrap_or_else(|| s.paths.root.join("codex.exe"))
+        .unwrap_or_else(|| s.paths.root.join(crate::portable_paths::exe("codex")))
 }
 fn project(s: &AppState) -> Result<String, String> {
     let p = s
@@ -137,7 +137,7 @@ pub(crate) fn engines(paths: &PortablePaths, c: &Config) -> Value {
         .binary_path
         .as_ref()
         .map(PathBuf::from)
-        .unwrap_or_else(|| paths.root.join("codex.exe"));
+        .unwrap_or_else(|| paths.root.join(crate::portable_paths::exe("codex")));
     let claude = claude::find_binary(&paths.root, c);
     let bundled = netenv::bundled_git_bash(&paths.root);
     let system = netenv::system_git_bash();
@@ -160,16 +160,24 @@ pub(crate) fn hash_executable(path: &Path, name: &str) -> Result<String, String>
     let mut dos = [0u8; 64];
     f.read_exact(&mut dos)
         .map_err(|_| format!("{name} is not a valid program"))?;
-    if &dos[..2] != b"MZ" {
+    // macOS: a Mach-O program (thin or universal); the version check below confirms what it is.
+    if cfg!(not(windows)) {
+        let magic = u32::from_le_bytes(dos[..4].try_into().unwrap());
+        if ![0xfeedfacf, 0xcafebabe, 0xbebafeca].contains(&magic) {
+            return Err(format!("{name} is not a Mac program"));
+        }
+    } else if &dos[..2] != b"MZ" {
         return Err(format!("{name} must be a Windows x64 program"));
     }
-    let offset = u32::from_le_bytes(dos[60..64].try_into().unwrap());
-    f.seek(SeekFrom::Start(offset as u64))
-        .map_err(|e| e.to_string())?;
-    let mut pe = [0u8; 6];
-    f.read_exact(&mut pe).map_err(|e| e.to_string())?;
-    if &pe[..4] != b"PE\0\0" || pe[4..] != [0x64, 0x86] {
-        return Err(format!("{name} must be a Windows x64 program"));
+    if cfg!(windows) {
+        let offset = u32::from_le_bytes(dos[60..64].try_into().unwrap());
+        f.seek(SeekFrom::Start(offset as u64))
+            .map_err(|e| e.to_string())?;
+        let mut pe = [0u8; 6];
+        f.read_exact(&mut pe).map_err(|e| e.to_string())?;
+        if &pe[..4] != b"PE\0\0" || pe[4..] != [0x64, 0x86] {
+            return Err(format!("{name} must be a Windows x64 program"));
+        }
     }
     f.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let mut hasher = Sha256::new();
@@ -1064,6 +1072,7 @@ pub async fn send_turn(app: AppHandle, s: State<'_, AppState>, text: String) -> 
             .clone()
             .ok_or("Create or reopen a thread first")?;
         let mut params = json!({"threadId":id,"input":[{"type":"text","text":text}],"model":r.view.config.model,"cwd":project_from_config(&r.view.config)?,"approvalPolicy":r.view.config.approval_policy,"approvalsReviewer":"user","summary":r.view.config.reasoning_summary});
+        params["sandboxPolicy"] = sandbox_policy(&r.view.config.sandbox);
         if let Some(effort) = &r.view.config.reasoning_effort {
             params["effort"] = json!(effort);
         }
@@ -1215,6 +1224,15 @@ pub async fn interrupt(app: AppHandle, s: State<'_, AppState>) -> Result<(), Str
     changed(&s, &app);
     Ok(())
 }
+/// The per-turn sandbox. Workspace-write allows network so package installs (npm, cargo, uv) don't
+/// stop for permission; writes still stay inside the project.
+fn sandbox_policy(mode: &str) -> Value {
+    match mode {
+        "danger-full-access" => json!({"type":"dangerFullAccess"}),
+        "workspace-write" => json!({"type":"workspaceWrite","networkAccess":true}),
+        _ => json!({"type":"readOnly"}),
+    }
+}
 #[tauri::command]
 pub async fn decide(
     app: AppHandle,
@@ -1223,6 +1241,31 @@ pub async fn decide(
     decision: String,
 ) -> Result<(), String> {
     let _op = s.operation.lock().await;
+    answer(&s, &key, &decision).await?;
+    changed(&s, &app);
+    Ok(())
+}
+/// Omni mode: approve what is waiting and stop asking from now on (full access, never ask).
+/// Takes effect immediately, including for the rest of the current turn.
+#[tauri::command]
+pub async fn allow_all(app: AppHandle, s: State<'_, AppState>) -> Result<(), String> {
+    let _op = s.operation.lock().await;
+    let keys: Vec<String> = {
+        let mut r = s.shared.lock().unwrap();
+        r.view.config.sandbox = "danger-full-access".into();
+        r.view.config.approval_policy = "never".into();
+        r.pending.iter().filter(|(_, a)| a.supported).map(|(k, _)| k.clone()).collect()
+    };
+    save(&s)?;
+    for key in keys {
+        let _ = answer(&s, &key, "accept").await;
+    }
+    changed(&s, &app);
+    Ok(())
+}
+async fn answer(s: &AppState, key: &str, decision: &str) -> Result<(), String> {
+    let decision = decision.to_string();
+    let key = key.to_string();
     let a = s
         .shared
         .lock()
@@ -1242,7 +1285,7 @@ pub async fn decide(
             .ok_or("Claude stopped; this request was cancelled.")?;
         session.send(response).await?;
     } else {
-        let rpc = rpc(&s)?;
+        let rpc = rpc(s)?;
         let response = protocol::approval_response(&a.method, &decision, &a.params)?;
         rpc.write(json!({"id":a.id,"result":response})).await?;
     }
@@ -1261,7 +1304,6 @@ pub async fn decide(
         }
         .into();
     }
-    changed(&s, &app);
     Ok(())
 }
 #[derive(Deserialize)]
@@ -2425,6 +2467,11 @@ pub async fn open_external(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
+    #[cfg(not(windows))]
+    std::process::Command::new("open")
+        .arg(url.as_str())
+        .spawn()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -2453,7 +2500,7 @@ pub async fn open_project_folder(s: State<'_, AppState>, path: String) -> Result
     }
     #[cfg(not(windows))]
     {
-        std::process::Command::new("xdg-open")
+        std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
             .arg(&canonical)
             .spawn()
             .map_err(|e| format!("Could not open the project folder: {e}"))?;
@@ -2490,5 +2537,47 @@ mod tests {
         assert!(names.contains(&"RustPortableHarness/RustPortableHarness.exe".to_string()));
         assert!(names.contains(&"RustPortableHarness/data/".to_string()));
         assert!(!names.iter().any(|n| n.contains("auth.json") || n.contains("config.json") || n.contains("main.py") || n.ends_with(".part")), "{names:?}");
+    }
+}
+
+/// Speech to text with the local Parakeet model; `audio` is a base64 16 kHz mono WAV.
+#[tauri::command]
+pub async fn transcribe(s: State<'_, AppState>, audio: String) -> Result<String, String> {
+    if audio.len() > 40 * 1024 * 1024 {
+        return Err("That recording is too long. Keep dictation under about 10 minutes.".into());
+    }
+    let wav = decode_base64(&audio).ok_or("The recording could not be read.")?;
+    tools::transcribe(&layout(&s.paths), &wav).await
+}
+fn decode_base64(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let mut buf = 0u32;
+    let mut bits = 0;
+    for c in text.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=') {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        } as u32;
+        buf = (buf << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+#[cfg(test)]
+mod base64_tests {
+    #[test]
+    fn decodes() {
+        assert_eq!(super::decode_base64("SGVsbG8gY2xhc3Mh").unwrap(), b"Hello class!");
+        assert_eq!(super::decode_base64("AAEC/w==").unwrap(), vec![0, 1, 2, 255]);
+        assert!(super::decode_base64("@@").is_none());
     }
 }

@@ -1,0 +1,92 @@
+name: Mac build
+
+# Builds the portable Mac app on Apple Silicon and Intel, bundles the official Codex CLI 0.163.0
+# for Mac, smoke-tests it, and attaches the ZIPs to the release when a v* tag is pushed.
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Mac icons
+        run: |
+          sips -s format png src-tauri/icons/icon.ico --out "$RUNNER_TEMP/icon.png"
+          sips -z 1024 1024 "$RUNNER_TEMP/icon.png"
+          npx tauri icon "$RUNNER_TEMP/icon.png" -o src-tauri/icons
+      - name: Build web UI
+        run: npm run build
+      - name: Unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build app
+        run: npx tauri build --bundles app --config '{"bundle":{"active":true,"icon":["icons/icon.icns","icons/icon.png"]}}'
+      - name: Official Codex 0.163.0 for Mac
+        run: |
+          npm install -g @openai/codex@0.163.0
+          ROOT="$(npm root -g)/@openai/codex"
+          CODEX="$(find "$ROOT" -type f -name codex -perm -u+x | head -1)"
+          echo "Found: $CODEX"
+          test "$("$CODEX" --version)" = "codex-cli 0.163.0"
+          echo "CODEX=$CODEX" >> "$GITHUB_ENV"
+      - name: Package
+        run: |
+          OUT="$RUNNER_TEMP/pkg/RustPortableHarness"
+          mkdir -p "$OUT/data" "$OUT/projects"
+          cp -R src-tauri/target/release/bundle/macos/RustPortableHarness.app "$OUT/"
+          cp "$CODEX" "$OUT/codex"
+          VENDOR="$(dirname "$(dirname "$CODEX")")"
+          for d in codex-path codex-resources; do
+            if [ -d "$VENDOR/$d" ]; then cp -R "$VENDOR/$d" "$OUT/$d"; fi
+          done
+          cp README-PORTABLE.md START-HERE-MAC.txt LICENSE THIRD-PARTY-LICENSES.txt "$OUT/"
+          cp -R docs "$OUT/docs"
+          codesign --force --deep -s - "$OUT/RustPortableHarness.app"
+          codesign --force -s - "$OUT/codex"
+          ZIP="RustPortableHarness-macos-${{ matrix.arch }}.zip"
+          (cd "$RUNNER_TEMP/pkg" && ditto -c -k --keepParent RustPortableHarness "$GITHUB_WORKSPACE/$ZIP")
+          shasum -a 256 "$ZIP" > "$ZIP.sha256"
+          ls -la "$ZIP"
+      - name: Smoke test (app starts, finds Codex, keeps data beside the app)
+        run: |
+          DIR="$RUNNER_TEMP/smoke"
+          mkdir -p "$DIR"
+          ditto -x -k "RustPortableHarness-macos-${{ matrix.arch }}.zip" "$DIR"
+          APP="$DIR/RustPortableHarness/RustPortableHarness.app/Contents/MacOS/RustPortableHarness"
+          "$APP" &
+          PID=$!
+          for i in $(seq 1 40); do [ -f "$DIR/RustPortableHarness/data/config.json" ] && break; sleep 1; done
+          sleep 8
+          kill -0 "$PID"
+          kill "$PID" || true
+          test -f "$DIR/RustPortableHarness/data/config.json"
+          ls "$DIR/RustPortableHarness/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: RustPortableHarness-macos-*.zip*
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "RustPortableHarness-macos-${{ matrix.arch }}.zip" "RustPortableHarness-macos-${{ matrix.arch }}.zip.sha256" --clobber

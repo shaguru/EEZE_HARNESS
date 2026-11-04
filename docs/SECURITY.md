@@ -20,6 +20,10 @@ an LLM API itself, scrape terminal output, grant access on its own, or expose an
 * First-run permission mode is **Ask before changes** (read-only sandbox + on-request approval).
   **Work without asking** and **Full access** are explicit choices with a warning, and can't be changed
   in the middle of a turn.
+* **Omni** (`danger-full-access` sandbox + `never` approval for Codex; for Claude, the harness
+  allows every request itself) is an explicit choice on the message box or via **Approve all & stop
+  asking** in the approval box. A red banner stays visible while it's on. It's meant for sandboxed or
+  practice machines.
 * Approval requests show a plain-language summary plus the exact parameters. Only schema-defined
   responses are sent, correlated by request ID.
 * Markdown is rendered with raw HTML disabled; links open only after confirmation and only for `https`.
@@ -48,6 +52,13 @@ an LLM API itself, scrape terminal output, grant access on its own, or expose an
   Codex 0.163 refuses every write in read-only mode instead of asking. Configs still on the old
   read-only default are upgraded once, with a notice; a later read-only choice is kept.
 
+## Dictation
+
+* Audio is recorded only while the 🎤 button is on (the timer shows), converted to a 16 kHz WAV in
+  memory, and transcribed by the local sherpa-onnx runner with NVIDIA Parakeet TDT 0.6B v3. Nothing is
+  uploaded; the WAV is written to `data/temp` only for the runner and deleted afterwards.
+* Runner and model are pinned GitHub release files (k2-fsa/sherpa-onnx) checked by SHA-256.
+
 ## Claude specifics
 
 * The harness runs `claude.exe -p --input-format stream-json --output-format stream-json
@@ -65,8 +76,8 @@ an LLM API itself, scrape terminal output, grant access on its own, or expose an
 
 ## Accounts
 
-Multiple accounts are separate sign-ins, switched by the user. The harness never rotates accounts
-automatically or combines their limits. Sharing logins and evading usage limits break OpenAI's and
+Multiple accounts are separate sign-ins, switched by the user (one at a time). The harness never
+rotates or pools accounts, combines their limits, or shares them across a team. Sharing logins and evading usage limits break OpenAI's and
 Anthropic's terms.
 
 The network and account policies of the host computer still apply. A portable EXE does not establish

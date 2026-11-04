@@ -1,6 +1,6 @@
 [package]
 name = "rust-portable-harness"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.90"
 
@@ -29,6 +29,8 @@ rfd = "0.15"
 uuid = { version = "1", features = ["v4"] }
 zip = { version = "2.6", default-features = false, features = ["deflate-flate2", "flate2"] }
 flate2 = "1"
+tar = "0.4"
+bzip2 = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security", "Win32_UI_WindowsAndMessaging", "Win32_System_Registry", "Win32_Storage_FileSystem"] }

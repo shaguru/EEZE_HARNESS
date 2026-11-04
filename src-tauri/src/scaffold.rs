@@ -3,6 +3,7 @@
 //! project is run, all with the portable tools from `tools.rs`.
 use crate::{
     netenv::ChildEnv,
+    portable_paths::exe,
     tools::{self, Layout, Report, PYTHON_VERSION},
 };
 use serde_json::{json, Value};
@@ -228,7 +229,7 @@ pub async fn create(l: &Layout, parent: &Path, name: &str, template: &str, git: 
     report(Some(5), "Creating files…", None);
     match template {
         "python-tk" | "python" => {
-            let uv = program(l.tools().join("uv").join("uv.exe"), "uv.exe");
+            let uv = program(l.tools().join("uv").join(exe("uv")), &exe("uv"));
             tools::run_logged(&uv, &["init", "--app", "--no-package", "--vcs", "none", "--no-workspace", "--python", PYTHON_VERSION, "--name", &pkg, "."], &dir, env, report, "Setting up the Python project…").await?;
             write(&dir, "main.py", if template == "python-tk" { PY_TK } else { PY_CONSOLE })?;
             write(&dir, ".gitignore", ".venv/\n__pycache__/\n*.pyc\n")?;
@@ -236,7 +237,7 @@ pub async fn create(l: &Layout, parent: &Path, name: &str, template: &str, git: 
             tools::run_logged(&uv, &["sync"], &dir, env, report, "Creating the Python environment (.venv)…").await?;
         }
         "rust" | "rust-gui" => {
-            let cargo = program(l.cargo_home().join("bin").join("cargo.exe"), "cargo.exe");
+            let cargo = program(l.cargo_home().join("bin").join(exe("cargo")), &exe("cargo"));
             tools::run_logged(&cargo, &["init", "--vcs", "none", "--name", &pkg, "."], &dir, env, report, "Setting up the Rust project…").await?;
             if template == "rust-gui" {
                 write(&dir, "Cargo.toml", &format!("[package]\nname = \"{pkg}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\neframe = {{ version = \"0.37\", default-features = false, features = [\"default_fonts\", \"glow\"] }}\n{RS_PROFILE}"))?;
@@ -251,7 +252,7 @@ pub async fn create(l: &Layout, parent: &Path, name: &str, template: &str, git: 
             tools::run_logged(&cargo, &["build"], &dir, env, report, "Building for the first time (window apps take about a minute)…").await?;
         }
         "web-convex" => {
-            let node = program(l.tools().join("node").join("node.exe"), "node.exe");
+            let node = program(l.tools().join("node").join(exe("node")), &exe("node"));
             let npm_cli = l.tools().join("node").join("node_modules/npm/bin/npm-cli.js");
             let npm = |args: Vec<&str>| {
                 let mut all = vec![];
@@ -261,7 +262,7 @@ pub async fn create(l: &Layout, parent: &Path, name: &str, template: &str, git: 
                 all.extend(args.iter().map(|s| s.to_string()));
                 all
             };
-            let (prog, init) = if npm_cli.is_file() { (node.clone(), npm(vec!["init", "-y"])) } else { (PathBuf::from("npm.cmd"), vec!["init".into(), "-y".into()]) };
+            let (prog, init) = if npm_cli.is_file() { (node.clone(), npm(vec!["init", "-y"])) } else { (PathBuf::from(if cfg!(windows) { "npm.cmd" } else { "npm" }), vec!["init".into(), "-y".into()]) };
             let init: Vec<&str> = init.iter().map(|s| s.as_str()).collect();
             tools::run_logged(&prog, &init, &dir, env, report, "Setting up the Node.js project…").await?;
             report(Some(40), "Installing the Convex CLI (npm install convex)…", None);
@@ -282,7 +283,7 @@ pub async fn create(l: &Layout, parent: &Path, name: &str, template: &str, git: 
     write(&dir, "AGENTS.md", &notes)?;
     write(&dir, "CLAUDE.md", &notes)?;
     if git {
-        let git = if l.git_exe().is_file() { l.git_exe() } else { PathBuf::from("git.exe") };
+        let git = if l.git_exe().is_file() { l.git_exe() } else { PathBuf::from(exe("git")) };
         report(Some(95), "Starting a Git repository…", None);
         tools::run_logged(&git, &["init", "-b", "main"], &dir, env, report, "Starting a Git repository…").await?;
     }
@@ -309,6 +310,8 @@ mod tests {
         let dir = create(&l, &t.path().join("projects"), "Demo", "empty", false, &ChildEnv::default(), &report).await.unwrap();
         assert!(dir.join("AGENTS.md").is_file() && dir.join("README.md").is_file());
         assert!(create(&l, &t.path().join("projects"), "Demo", "empty", false, &ChildEnv::default(), &report).await.is_err());
-        assert!(create(&l, &t.path().join("projects"), "Py", "python", false, &ChildEnv::default(), &report).await.unwrap_err().contains("not set up"));
+        if cfg!(windows) {
+    assert!(create(&l, &t.path().join("projects"), "Py", "python", false, &ChildEnv::default(), &report).await.unwrap_err().contains("not set up"));
+        }
     }
 }
